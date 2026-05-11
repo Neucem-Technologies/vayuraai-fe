@@ -1,0 +1,12 @@
+---
+description: Frontend standards for scalable but lean architecture
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend Standards
+
+- Prefer reusable components over page-specific duplication.
+- Keep components presentational; place async logic in hooks/services.
+- Use Ant Design components before creating custom primitives.
+- Add accessibility labels for interactive elements.

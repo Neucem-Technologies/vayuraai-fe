@@ -1,0 +1,12 @@
+---
+description: Keep frontend delivery aligned with product flow and process quality
+alwaysApply: true
+---
+
+# Frontend Product Flow Rule
+
+For each feature/page change:
+- Follow `docs/frontend-development-process.md` workflow.
+- Ensure loading, empty, error, and success states are implemented.
+- Prefer reusable component extraction over page-specific duplication.
+- Keep UX decisions simple and explain tradeoffs in PR notes when deviating.
