@@ -1,0 +1,22 @@
+---
+description: Canonical development guide for all agent work on Vayura frontend
+globs: "**/*"
+alwaysApply: true
+---
+
+# Agent: read the development guide first
+
+Before implementing or changing frontend (or cross-cutting) behavior, read and follow:
+
+**`docs/agent-development-guide.md`**
+
+That document is the **only** source of truth for:
+
+- Consuming API errors via `ApiRequestError` and `{ error: { code, message } }`
+- User-facing copy via `getAuthErrorPresentation()` in `src/lib/auth-errors.ts` (toasts + field errors)
+- Auth pages (`login.tsx`, `signup.tsx`), cross-links, and no demo credential UI
+- Stack: Vite, React, Tailwind, wouter — **not** Ant Design
+
+When adding a new API error code: update `src/lib/auth-errors.ts` and the catalog in `docs/agent-development-guide.md`; align message with backend.
+
+Also use `docs/frontend-development-process.md` for screen workflow and definition of done.
