@@ -3,7 +3,10 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useClients, usePortfolioStats } from "@/hooks/use-data";
+import { createOrganisation } from "@/lib/organisations-api";
+import { ApiRequestError } from "@/lib/api-client";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -110,9 +113,33 @@ function formatTonnes(kg: number) {
 export default function Clients() {
   const [, setLocation] = useLocation();
   const { setActiveClient } = useActiveClientStore();
+  const queryClient = useQueryClient();
   const { data: clients, isLoading } = useClients();
   const { data: stats } = usePortfolioStats();
   const { toast } = useToast();
+  const createClient = useMutation({
+    mutationFn: (values: z.infer<typeof addClientSchema>) =>
+      createOrganisation({
+        legalName: values.legalName,
+        shortName: values.shortName,
+        industry: values.industry,
+      }),
+    onSuccess: (org) => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolioStats'] });
+      setAddOpen(false);
+      addForm.reset();
+      toast({
+        title: "Client added",
+        description: `${org.legalName} has been added to your portfolio.`,
+      });
+    },
+    onError: (err) => {
+      const message =
+        err instanceof ApiRequestError ? err.message : "Could not create client. Please try again.";
+      toast({ title: "Could not add client", description: message, variant: "destructive" });
+    },
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
@@ -136,14 +163,11 @@ export default function Clients() {
 
   async function onAddClient(values: z.infer<typeof addClientSchema>) {
     setAdding(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setAdding(false);
-    setAddOpen(false);
-    addForm.reset();
-    toast({
-      title: "Client added",
-      description: `${values.legalName} has been added to your portfolio and is now in onboarding.`,
-    });
+    try {
+      await createClient.mutateAsync(values);
+    } finally {
+      setAdding(false);
+    }
   }
 
   const industries = useMemo(() => {

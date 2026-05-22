@@ -9,7 +9,10 @@ export type { UserType } from '@/lib/auth-api';
 export const TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
-function mapApiUser(api: PublicUser): AppUser {
+function mapApiUser(
+  api: PublicUser & { fullName?: string | null },
+  tenantName?: string,
+): AppUser {
   const userType = api.userType ?? readStoredUserType();
   const base = userType === 'sme' ? MOCK_SME_USER : MOCK_USER;
   const local = api.email.split('@')[0]?.replace(/\./g, ' ') ?? 'User';
@@ -21,8 +24,9 @@ function mapApiUser(api: PublicUser): AppUser {
     ...base,
     id: api.id,
     email: api.email,
-    name: title,
+    name: api.fullName?.trim() || title,
     userType,
+    company: tenantName ?? base.company,
     avatar: api.email.slice(0, 2).toUpperCase(),
   };
 }
@@ -67,9 +71,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       return;
     }
     try {
-      const { user: apiUser } = await authApi.fetchMe(token);
+      const profile = await authApi.fetchMe(token);
       const { completed } = await authApi.fetchOnboardingStatus(token);
-      const user = mapApiUser(apiUser);
+      const user = mapApiUser(profile.user, profile.tenant?.name);
       set({ user, isAuthenticated: true, onboardingComplete: completed });
       persistAuthSnapshot(user, true, completed);
     } catch {

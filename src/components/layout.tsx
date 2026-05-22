@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
-import { MOCK_CLIENTS, MOCK_FIRM } from "@/lib/mock-data";
+import { useClients } from "@/hooks/use-data";
+import { MOCK_FIRM } from "@/lib/mock-data";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +37,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuthStore();
   const { activeClientId, setActiveClient } = useActiveClientStore();
-  const activeClient = MOCK_CLIENTS.find((c) => c.id === activeClientId) ?? null;
+  const { data: portfolioClients = [] } = useClients();
+  const activeClient = portfolioClients.find((c) => c.id === activeClientId) ?? null;
 
   const isSme = user?.userType === "sme";
 
@@ -125,9 +127,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
                 <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Switch client ({MOCK_CLIENTS.length})
+                  Switch client ({portfolioClients.length})
                 </DropdownMenuLabel>
-                {MOCK_CLIENTS.map((c) => (
+                {portfolioClients.map((c) => (
                   <DropdownMenuItem
                     key={c.id}
                     onClick={() => handleSwitchClient(c.id)}

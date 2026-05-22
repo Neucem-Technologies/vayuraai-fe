@@ -1,6 +1,8 @@
 import { apiFetch } from '@/lib/api-client';
+import type { MeProfile } from '@/lib/organisations-api';
 
 export type UserType = 'consultant' | 'sme';
+export type { MeProfile };
 
 export type PublicUser = {
   id: string;
@@ -33,8 +35,8 @@ export async function login(email: string, password: string): Promise<LoginResul
   });
 }
 
-export async function fetchMe(accessToken: string): Promise<{ user: PublicUser }> {
-  return apiFetch<{ user: PublicUser }>('/api/v1/auth/me', {
+export async function fetchMe(accessToken: string): Promise<MeProfile> {
+  return apiFetch<MeProfile>('/api/v1/auth/me', {
     method: 'GET',
     accessToken,
   });
