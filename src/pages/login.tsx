@@ -20,7 +20,7 @@ import { useAuthStore } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { MOCK_SME_USER } from "@/lib/mock-data";
 import * as authApi from "@/lib/auth-api";
-import { ApiRequestError } from "@/lib/api-client";
+import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
 
 const formSchema = z.object({
@@ -59,8 +59,8 @@ export default function Login() {
         setLocation(onboardingComplete ? "/clients" : "/onboarding/organization");
       }
     } catch (e) {
-      const msg = e instanceof ApiRequestError ? e.message : "Sign in failed. Check your email and password.";
-      toast({ variant: "destructive", title: "Sign in failed", description: msg });
+      const { title, description } = getAuthErrorPresentation(e, "login");
+      toast({ variant: "destructive", title, description });
     } finally {
       setIsLoading(false);
     }
@@ -79,11 +79,8 @@ export default function Login() {
       <p className="mt-2 text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
         <Link href="/signup" className="font-medium text-primary hover:text-primary/90">
-          Start your 14-day free trial
+          Create account
         </Link>
-      </p>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Account type (consultant or client contact) is set when you sign up and applies each time you sign in.
       </p>
 
       <div className="mt-6">
@@ -138,6 +135,19 @@ export default function Login() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign in"}
               {!isLoading && <ArrowRight className="ml-2 w-4 h-4" />}
+            </Button>
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/signup">Create your account</Link>
             </Button>
           </form>
         </Form>

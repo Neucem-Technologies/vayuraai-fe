@@ -21,7 +21,7 @@ import { MOCK_SME_USER } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import * as authApi from "@/lib/auth-api";
 import type { UserType } from "@/lib/auth-api";
-import { ApiRequestError } from "@/lib/api-client";
+import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
 
 const signupSchema = z.object({
@@ -64,11 +64,11 @@ export default function Signup() {
         setLocation(onboardingComplete ? "/clients" : "/onboarding/organization");
       }
     } catch (e) {
-      const msg =
-        e instanceof ApiRequestError
-          ? e.message
-          : "Could not create your account. Try a different email or sign in.";
-      toast({ variant: "destructive", title: "Could not create account", description: msg });
+      const { title, description, emailFieldMessage } = getAuthErrorPresentation(e, "signup");
+      if (emailFieldMessage) {
+        form.setError("email", { type: "server", message: emailFieldMessage });
+      }
+      toast({ variant: "destructive", title, description });
     } finally {
       setIsLoading(false);
     }
@@ -87,7 +87,7 @@ export default function Signup() {
       <p className="mt-2 text-sm text-muted-foreground">
         Already have an account?{" "}
         <Link href="/login" className="font-medium text-primary hover:text-primary/90">
-          Sign in instead
+          Sign in
         </Link>
       </p>
 
@@ -193,6 +193,19 @@ export default function Signup() {
             <Button type="submit" className="w-full mt-2" disabled={isLoading}>
               {isLoading ? "Creating account..." : "Start 14-day free trial"}
               {!isLoading && <ArrowRight className="ml-2 w-4 h-4" />}
+            </Button>
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/login">Sign in to your account</Link>
             </Button>
           </form>
         </Form>

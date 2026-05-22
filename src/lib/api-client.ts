@@ -38,8 +38,16 @@ export async function apiFetch<T>(
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const err = json as Partial<ApiErrorBody> | null;
-    const code = err?.error?.code ?? 'UNKNOWN';
-    const message = err?.error?.message ?? res.statusText;
+    const code = err?.error?.code ?? (res.status === 401 ? 'UNAUTHORIZED' : 'UNKNOWN');
+    const message =
+      err?.error?.message ??
+      (res.status === 409
+        ? 'This resource already exists.'
+        : res.status === 401
+          ? 'You are not authorized to perform this action.'
+          : res.status >= 500
+            ? 'Something went wrong on our side. Please try again in a moment.'
+            : res.statusText || 'Request failed.');
     throw new ApiRequestError(res.status, code, message);
   }
   const body = json as ApiSuccess<T> | null;
