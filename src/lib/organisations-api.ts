@@ -20,6 +20,21 @@ export type OrganisationDto = {
 export type TenantPlan = 'starter' | 'growth' | 'enterprise';
 export type TenantRole = 'consultant_admin' | 'consultant_member';
 
+export type AccessProfile = {
+  kind: 'consultant' | 'client_viewer';
+  tenantRole: TenantRole | null;
+  orgRole: string | null;
+  orgId: string | null;
+  allowedOrgIds: string[];
+  permissions: {
+    readOnly: boolean;
+    canManageClientPortal: boolean;
+    canManageTenant: boolean;
+    canAssignConsultants: boolean;
+  };
+  canEnableClientPortal: boolean;
+};
+
 export type MeProfile = {
   user: {
     id: string;
@@ -39,6 +54,7 @@ export type MeProfile = {
     role: string;
     organisation: OrganisationDto;
   }>;
+  access: AccessProfile;
 };
 
 function token(): string | null {
@@ -78,6 +94,28 @@ export async function createOrganisation(
     body: JSON.stringify(input),
     accessToken,
   });
+  return data.organisation;
+}
+
+export type UpdateOrganisationInput = {
+  legalName?: string;
+  shortName?: string;
+  industry?: string | null;
+  country?: string;
+  clientViewerEnabled?: boolean;
+  showConsultantBranding?: boolean;
+};
+
+export async function updateOrganisation(
+  orgId: string,
+  input: UpdateOrganisationInput,
+): Promise<OrganisationDto> {
+  const accessToken = token();
+  if (!accessToken) throw new Error('Not authenticated');
+  const data = await apiFetch<{ organisation: OrganisationDto }>(
+    `/api/v1/organisations/${orgId}`,
+    { method: 'PATCH', body: JSON.stringify(input), accessToken },
+  );
   return data.organisation;
 }
 

@@ -11,9 +11,15 @@ function hasSession(): boolean {
 export function useClients() {
   const userType = useAuthStore((s) => s.user?.userType);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const accessKind = useAuthStore((s) => s.access?.kind);
   return useQuery({
-    queryKey: ['clients', isAuthenticated, userType],
+    queryKey: ['clients', isAuthenticated, userType, accessKind],
     queryFn: async () => {
+      const access = useAuthStore.getState().access;
+      if (access?.kind === 'client_viewer' && access.allowedOrgIds.length > 0) {
+        const orgs = await Promise.all(access.allowedOrgIds.map((id) => getOrganisation(id)));
+        return orgs.map(organisationToClientOrg);
+      }
       if (!isAuthenticated || !hasSession() || userType !== 'consultant') {
         await delay(300);
         return MOCK_CLIENTS;

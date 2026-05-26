@@ -50,7 +50,11 @@ export default function Login() {
       const data = await authApi.login(values.email, values.password);
       await establishSessionFromLogin(data.accessToken, data.user);
       await new Promise((resolve) => setTimeout(resolve, 700));
-      const { onboardingComplete, user } = useAuthStore.getState();
+      const { onboardingComplete, access, user } = useAuthStore.getState();
+      if (access?.kind === "client_viewer") {
+        setLocation("/client/dashboard");
+        return;
+      }
       const userType = user?.userType ?? "consultant";
       if (userType === "sme") {
         setActiveClient(MOCK_SME_USER.clientId ?? null);

@@ -3,15 +3,16 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useIsClientViewer } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { AppLayout } from "@/components/layout";
+import { ClientLayout } from "@/components/client-layout";
 
-// Pages
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import ForgotPassword from "@/pages/forgot-password";
+import AcceptClientInvite from "@/pages/accept-client-invite";
 
 import OnboardingOrganization from "@/pages/onboarding/organization";
 import OnboardingIndustry from "@/pages/onboarding/industry";
@@ -29,6 +30,9 @@ import SettingsUsers from "@/pages/settings/users";
 import SettingsFirm from "@/pages/settings/firm";
 import Clients from "@/pages/clients";
 
+import ClientDashboard from "@/pages/client/dashboard";
+import ClientReports from "@/pages/client/reports";
+
 const queryClient = new QueryClient();
 
 function ProtectedRoute({
@@ -42,25 +46,27 @@ function ProtectedRoute({
   requireActiveClient?: boolean;
   consultantOnly?: boolean;
 }) {
-  const { isAuthenticated, onboardingComplete, user } = useAuthStore();
+  const { isAuthenticated, onboardingComplete, access } = useAuthStore();
   const activeClientId = useActiveClientStore((s) => s.activeClientId);
-  const isSme = user?.userType === "sme";
+  const isClientViewer = access?.kind === "client_viewer";
 
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
+  }
+
+  if (isClientViewer) {
+    return <Redirect to="/client/dashboard" />;
   }
 
   if (requireOnboarding && !onboardingComplete) {
     return <Redirect to="/onboarding/organization" />;
   }
 
-  // SMEs trying to access consultant-only pages → their dashboard
-  if (consultantOnly && isSme) {
+  if (consultantOnly && access?.kind !== "consultant") {
     return <Redirect to="/dashboard" />;
   }
 
-  // SMEs always have an active client (set on login), so skip requireActiveClient check
-  if (requireActiveClient && !isSme && !activeClientId) {
+  if (requireActiveClient && !activeClientId) {
     return <Redirect to="/clients" />;
   }
 
@@ -71,41 +77,54 @@ function ProtectedRoute({
   );
 }
 
-function OnboardingRoute({ component: Component }: { component: ComponentType }) {
-  const { isAuthenticated } = useAuthStore();
+function ClientProtectedRoute({ component: Component }: { component: ComponentType }) {
+  const { isAuthenticated, access } = useAuthStore();
   if (!isAuthenticated) return <Redirect to="/login" />;
+  if (access?.kind !== "client_viewer") return <Redirect to="/clients" />;
+  return (
+    <ClientLayout>
+      <Component />
+    </ClientLayout>
+  );
+}
+
+function OnboardingRoute({ component: Component }: { component: ComponentType }) {
+  const { isAuthenticated, access } = useAuthStore();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (access?.kind === "client_viewer") return <Redirect to="/client/dashboard" />;
   return <Component />;
 }
 
 function Router() {
-  const { isAuthenticated, onboardingComplete, user } = useAuthStore();
-  const isSme = user?.userType === "sme";
+  const { isAuthenticated, onboardingComplete } = useAuthStore();
+  const isClientViewer = useIsClientViewer();
 
   return (
     <Switch>
       <Route path="/">
         {isAuthenticated
-          ? (onboardingComplete
-              ? <Redirect to={isSme ? "/dashboard" : "/clients"} />
-              : <Redirect to="/onboarding/organization" />)
+          ? isClientViewer
+            ? <Redirect to="/client/dashboard" />
+            : onboardingComplete
+              ? <Redirect to="/clients" />
+              : <Redirect to="/onboarding/organization" />
           : <Redirect to="/signup" />}
       </Route>
 
-      {/* Auth */}
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/register" component={Signup} />
       <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/accept-client-invite" component={AcceptClientInvite} />
 
-      {/* Onboarding */}
       <Route path="/onboarding/organization" component={() => <OnboardingRoute component={OnboardingOrganization} />} />
       <Route path="/onboarding/industry" component={() => <OnboardingRoute component={OnboardingIndustry} />} />
       <Route path="/onboarding/data-sources" component={() => <OnboardingRoute component={OnboardingDataSources} />} />
 
-      {/* Portfolio — consultant only */}
-      <Route path="/clients" component={() => <ProtectedRoute component={Clients} consultantOnly />} />
+      <Route path="/client/dashboard" component={() => <ClientProtectedRoute component={ClientDashboard} />} />
+      <Route path="/client/reports" component={() => <ClientProtectedRoute component={ClientReports} />} />
 
-      {/* Active client views — accessible by both, SME always has active client */}
+      <Route path="/clients" component={() => <ProtectedRoute component={Clients} consultantOnly />} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} requireActiveClient />} />
       <Route path="/uploads" component={() => <ProtectedRoute component={Uploads} requireActiveClient />} />
       <Route path="/uploads/processing/:id" component={() => <ProtectedRoute component={Processing} requireActiveClient />} />
@@ -113,8 +132,6 @@ function Router() {
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} requireActiveClient />} />
       <Route path="/settings/organization" component={() => <ProtectedRoute component={SettingsOrganization} requireActiveClient />} />
       <Route path="/settings/users" component={() => <ProtectedRoute component={SettingsUsers} />} />
-
-      {/* Firm-wide settings — consultant only */}
       <Route path="/settings/factors" component={() => <ProtectedRoute component={SettingsFactors} consultantOnly />} />
       <Route path="/settings/firm" component={() => <ProtectedRoute component={SettingsFirm} consultantOnly />} />
 
