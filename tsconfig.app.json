@@ -15,7 +15,9 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@vayura/api-contracts": ["./shared/index.ts"],
+      "@vayura/api-contracts/*": ["./shared/*"]
     },
     "noUnusedLocals": true,
     "noUnusedParameters": true,
