@@ -1,50 +1,53 @@
-import { MOCK_EMISSIONS, MOCK_UPLOADS, MOCK_FACTORS, MOCK_FACILITIES, MOCK_REPORTS, MOCK_USERS, MOCK_SME_USERS, MOCK_DASHBOARD_STATS, MOCK_CLIENTS, MOCK_PORTFOLIO_STATS } from '@/lib/mock-data';
-import { organisationToClientOrg } from '@/lib/organisation-mapper';
+import { MOCK_FACILITIES, MOCK_USERS, MOCK_SME_USERS, MOCK_REPORTS } from '@/lib/mock-data';
+import { listEmissionFactors } from '@/lib/emission-factors-api';
+import { organisationToClientOrg, computePortfolioStats } from '@/lib/portfolio';
+import { computeDashboardStats, emptyDashboardStats } from '@/lib/dashboard';
 import { getOrganisation, listOrganisations } from '@/lib/organisations-api';
+import { getUploadDetail, listUploads, listActivityRecords } from '@/lib/uploads-api';
+import { activityRecordToEmission } from '@/lib/activity-record-mapper';
+import { uploadDtoToDoc } from '@/lib/upload-mapper';
+import { useActiveClientStore } from '@/hooks/use-active-client-store';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore, TOKEN_KEY } from '@/hooks/use-auth';
+import { useIngestionLiveStore } from '@/hooks/use-ingestion-live';
 
 function hasSession(): boolean {
   return !!localStorage.getItem(TOKEN_KEY);
 }
 
 export function useClients() {
-  const userType = useAuthStore((s) => s.user?.userType);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const accessKind = useAuthStore((s) => s.access?.kind);
+  const access = useAuthStore((s) => s.access);
   return useQuery({
-    queryKey: ['clients', isAuthenticated, userType, accessKind],
+    queryKey: ['clients', isAuthenticated, access?.kind, access?.allowedOrgIds],
     queryFn: async () => {
-      const access = useAuthStore.getState().access;
-      if (access?.kind === 'client_viewer' && access.allowedOrgIds.length > 0) {
+      if (!isAuthenticated || !hasSession() || !access) return [];
+      if (access.kind === 'client_viewer' && access.allowedOrgIds.length > 0) {
         const orgs = await Promise.all(access.allowedOrgIds.map((id) => getOrganisation(id)));
         return orgs.map(organisationToClientOrg);
       }
-      if (!isAuthenticated || !hasSession() || userType !== 'consultant') {
-        await delay(300);
-        return MOCK_CLIENTS;
-      }
+      if (access.kind !== 'consultant') return [];
       const orgs = await listOrganisations();
       return orgs.map(organisationToClientOrg);
     },
+    enabled: isAuthenticated && !!access,
   });
 }
 
 export function useClient(id: string | null) {
-  const userType = useAuthStore((s) => s.user?.userType);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const access = useAuthStore((s) => s.access);
   return useQuery({
-    queryKey: ['client', id, isAuthenticated, userType],
+    queryKey: ['client', id, isAuthenticated, access?.kind],
     queryFn: async () => {
-      if (!id) return null;
-      if (!isAuthenticated || !hasSession() || userType !== 'consultant') {
-        await delay(200);
-        return MOCK_CLIENTS.find((c) => c.id === id) ?? null;
+      if (!id || !isAuthenticated || !hasSession() || !access) return null;
+      if (access.kind === 'client_viewer' && !access.allowedOrgIds.includes(id)) {
+        return null;
       }
       const org = await getOrganisation(id);
       return organisationToClientOrg(org);
     },
-    enabled: !!id,
+    enabled: !!id && isAuthenticated && !!access,
   });
 }
 
@@ -52,68 +55,91 @@ export function usePortfolioStats() {
   const { data: clients } = useClients();
   return useQuery({
     queryKey: ['portfolioStats', clients?.map((c) => c.id).join(',')],
-    queryFn: async () => {
-      if (!clients?.length) {
-        await delay(300);
-        return MOCK_PORTFOLIO_STATS;
-      }
-      const active = clients.filter((c) => c.status === 'Active').length;
-      const industries = new Set(clients.map((c) => c.industry)).size;
-      return {
-        totalClients: clients.length,
-        activeEngagements: active,
-        industriesCovered: industries,
-        reportsInProgress: clients.filter((c) =>
-          ['In Progress', 'Behind Schedule', 'Final Review', 'Draft'].includes(c.reportingStatus),
-        ).length,
-        pendingReviews: clients.reduce((sum, c) => sum + c.pendingItems, 0),
-        totalEmissions: clients.reduce((sum, c) => sum + c.totalEmissionsYTD, 0),
-      };
-    },
+    queryFn: async () => computePortfolioStats(clients ?? []),
     enabled: clients !== undefined,
   });
 }
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function useEmissions() {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['emissions'],
+    queryKey: ['emissions', orgId, isAuthenticated],
     queryFn: async () => {
-      await delay(800);
-      return MOCK_EMISSIONS;
+      if (!orgId || !hasSession() || !isAuthenticated) return [];
+      const records = await listActivityRecords(orgId);
+      return records.map(activityRecordToEmission);
     },
+    enabled: !!orgId && isAuthenticated,
   });
 }
 
 export function useUploads() {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['uploads'],
+    queryKey: ['uploads', orgId, isAuthenticated],
     queryFn: async () => {
-      await delay(600);
-      return MOCK_UPLOADS;
+      if (!orgId || !hasSession() || !isAuthenticated) return [];
+      const rows = await listUploads(orgId);
+      return rows.map((row) => uploadDtoToDoc(row));
     },
+    enabled: !!orgId && isAuthenticated,
   });
 }
 
 export function useUpload(id: string) {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['upload', id],
+    queryKey: ['upload', orgId, id, isAuthenticated],
     queryFn: async () => {
-      await delay(400);
-      return MOCK_UPLOADS.find(u => u.id === id) || null;
+      if (!orgId || !hasSession() || !isAuthenticated) return null;
+      const detail = await getUploadDetail(orgId, id);
+      return uploadDtoToDoc(detail.upload, 'You', detail.lineItems.length);
     },
-    enabled: !!id,
+    enabled: !!id && !!orgId && isAuthenticated,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'Processing') return 3000;
+      return false;
+    },
   });
 }
 
-export function useFactors() {
+export function useUploadDetail(id: string) {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const wsConnected = useIngestionLiveStore((s) => s.wsConnected);
   return useQuery({
-    queryKey: ['factors'],
+    queryKey: ['uploadDetail', orgId, id, isAuthenticated],
     queryFn: async () => {
-      await delay(500);
-      return MOCK_FACTORS;
+      if (!orgId || !hasSession() || !isAuthenticated) return null;
+      return getUploadDetail(orgId, id);
     },
+    enabled: !!id && !!orgId && isAuthenticated,
+    refetchInterval: (query) => {
+      if (wsConnected) return false;
+      const status = query.state.data?.upload.status;
+      if (status === 'queued' || status === 'processing') return 3000;
+      return false;
+    },
+  });
+}
+
+export function useFactors(options?: { region?: string; year?: number }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const region = options?.region ?? 'India';
+  const year = options?.year ?? new Date().getFullYear();
+  return useQuery({
+    queryKey: ['factors', region, year, isAuthenticated],
+    queryFn: async () => {
+      if (!hasSession() || !isAuthenticated) return [];
+      return listEmissionFactors(region, year);
+    },
+    enabled: isAuthenticated,
   });
 }
 
@@ -151,18 +177,23 @@ export function useReports() {
   return useQuery({
     queryKey: ['reports'],
     queryFn: async () => {
-      await delay(600);
+      await delay(400);
       return MOCK_REPORTS;
     },
   });
 }
 
 export function useDashboardStats() {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const uploadsQuery = useUploads();
+
   return useQuery({
-    queryKey: ['dashboardStats'],
+    queryKey: ['dashboardStats', orgId, uploadsQuery.dataUpdatedAt],
     queryFn: async () => {
-      await delay(500);
-      return MOCK_DASHBOARD_STATS;
+      if (!orgId) return emptyDashboardStats();
+      return computeDashboardStats(uploadsQuery.data ?? []);
     },
+    enabled: !orgId || uploadsQuery.isFetched,
+    staleTime: 30_000,
   });
 }
