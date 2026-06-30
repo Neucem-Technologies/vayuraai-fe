@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload as UploadIcon,
   FileText,
@@ -9,6 +10,7 @@ import {
   Download,
   MoreHorizontal,
   Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +18,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -38,7 +50,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useUploads } from "@/hooks/use-data";
+import { useUploads, useFacilities } from "@/hooks/use-data";
+import { useActiveClientStore } from "@/hooks/use-active-client";
+import { uploadDocuments } from "@/lib/uploads-api";
+import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import { ApiRequestError } from "@/lib/api-client";
+import {
+  dedupeFilesInBatch,
+  findBlockingFilenameConflicts,
+  findCompletedFilenameMatches,
+} from "@/lib/upload-dedup";
 import { cn } from "@/lib/utils";
 import type { UploadStatus } from "@/lib/mock-data";
 
@@ -55,13 +76,51 @@ const STATUS_TABS: ("all" | UploadStatus)[] = ["all", "Processing", "Needs Revie
 
 export default function Uploads() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const orgId = useActiveClientStore((s) => s.activeClientId);
   const { data: uploads, isLoading } = useUploads();
+  const { data: orgFacilities = [] } = useFacilities();
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"all" | UploadStatus>("all");
   const [facility, setFacility] = useState<string>("all");
+  const [uploadFacility, setUploadFacility] = useState(ORGANISATION_WIDE_FACILITY);
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [batchSkipped, setBatchSkipped] = useState<string[]>([]);
+  const [completedWarnings, setCompletedWarnings] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingUpload, setPendingUpload] = useState<{ files: File[]; allowDuplicate: boolean } | null>(
+    null,
+  );
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const uploadMutation = useMutation({
+    mutationFn: ({ files, allowDuplicate, facilityLabel }: { files: File[]; allowDuplicate?: boolean; facilityLabel?: string }) => {
+      if (!orgId) throw new Error("Select a client organisation before uploading.");
+      return uploadDocuments(orgId, files, { allowDuplicate, facilityLabel });
+    },
+    onSuccess: async (created) => {
+      setStagedFiles([]);
+      setBatchSkipped([]);
+      setCompletedWarnings([]);
+      setUploadError(null);
+      setConfirmOpen(false);
+      setPendingUpload(null);
+      await queryClient.invalidateQueries({ queryKey: ['uploads', orgId] });
+      const first = created[0];
+      if (first) setLocation(`/uploads/processing/${first.id}`);
+    },
+    onError: (err: Error) => {
+      if (err instanceof ApiRequestError && err.code === 'DUPLICATE_UPLOAD') {
+        setConfirmOpen(true);
+        setPendingUpload((prev) => prev ?? { files: stagedFiles, allowDuplicate: false });
+        setUploadError(err.message);
+        return;
+      }
+      setUploadError(err.message);
+    },
+  });
 
   const facilities = Array.from(new Set((uploads ?? []).map((u) => u.facility)));
 
@@ -87,7 +146,38 @@ export default function Uploads() {
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
-    setStagedFiles(Array.from(files));
+    const { files: unique, skipped } = dedupeFilesInBatch(Array.from(files));
+    setStagedFiles(unique);
+    setBatchSkipped(skipped);
+    setUploadError(null);
+    setCompletedWarnings(
+      findCompletedFilenameMatches(
+        unique,
+        (uploads ?? []).map((u) => ({ filename: u.filename, status: u.status })),
+      ),
+    );
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const blockingConflicts = findBlockingFilenameConflicts(
+    stagedFiles,
+    (uploads ?? []).map((u) => ({ filename: u.filename, status: u.status })),
+  );
+
+  const startUpload = (allowDuplicate = false) => {
+    if (stagedFiles.length === 0) return;
+    setUploadError(null);
+    setPendingUpload({ files: stagedFiles, allowDuplicate });
+    if (blockingConflicts.length > 0 && !allowDuplicate) {
+      setConfirmOpen(true);
+      return;
+    }
+    uploadMutation.mutate({ files: stagedFiles, allowDuplicate, facilityLabel: uploadFacility });
+  };
+
+  const confirmUploadAnyway = () => {
+    const payload = pendingUpload ?? { files: stagedFiles, allowDuplicate: true };
+    uploadMutation.mutate({ files: payload.files, allowDuplicate: true, facilityLabel: uploadFacility });
   };
 
   const counts = {
@@ -142,10 +232,54 @@ export default function Uploads() {
             Supports PDF invoices, Excel spreadsheets, and CSV exports up to 25 MB
           </p>
           {stagedFiles.length > 0 && (
-            <div className="mt-4 w-full max-w-md text-left">
-              <div className="text-xs font-medium text-muted-foreground mb-2">
+              <div className="mt-4 w-full max-w-md text-left space-y-3">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1.5">Assign to facility</div>
+                <Select value={uploadFacility} onValueChange={setUploadFacility}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select facility" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ORGANISATION_WIDE_FACILITY}>{ORGANISATION_WIDE_FACILITY}</SelectItem>
+                    {orgFacilities.map((f) => (
+                      <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  SaaS invoices (e.g. Cursor) default to organisation-wide unless you pick a site.
+                </p>
+              </div>
+              <div className="text-xs font-medium text-muted-foreground">
                 {stagedFiles.length} file(s) ready to upload
               </div>
+              {batchSkipped.length > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                  Skipped {batchSkipped.length} duplicate name{batchSkipped.length === 1 ? "" : "s"} in this batch.
+                </p>
+              )}
+              {completedWarnings.length > 0 && (
+                <p className="text-xs text-muted-foreground mb-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    {completedWarnings.length === 1
+                      ? `"${completedWarnings[0]}" was uploaded before.`
+                      : `${completedWarnings.length} files match names already completed.`}{" "}
+                    Uploading again will create a separate record.
+                  </span>
+                </p>
+              )}
+              {blockingConflicts.length > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    {blockingConflicts.length === 1
+                      ? `"${blockingConflicts[0]}" is already processing.`
+                      : `${blockingConflicts.length} files are already queued or processing.`}{" "}
+                    You can confirm to upload anyway.
+                  </span>
+                </p>
+              )}
               <div className="space-y-1.5">
                 {stagedFiles.slice(0, 3).map((f, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/40">
@@ -156,12 +290,35 @@ export default function Uploads() {
                     </span>
                   </div>
                 ))}
+                {stagedFiles.length > 3 && (
+                  <p className="text-xs text-muted-foreground pl-2">
+                    +{stagedFiles.length - 3} more file{stagedFiles.length - 3 === 1 ? "" : "s"}
+                  </p>
+                )}
               </div>
+              {uploadError && (
+                <p className="mt-2 text-sm text-destructive">{uploadError}</p>
+              )}
               <div className="flex gap-2 mt-3">
-                <Button size="sm" onClick={() => { setStagedFiles([]); }}>
-                  Start processing
+                <Button
+                  size="sm"
+                  disabled={uploadMutation.isPending || !orgId}
+                  onClick={() => startUpload(false)}
+                >
+                  {uploadMutation.isPending ? "Uploading…" : "Start processing"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setStagedFiles([])}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={uploadMutation.isPending}
+                  onClick={() => {
+                    setStagedFiles([]);
+                    setBatchSkipped([]);
+                    setCompletedWarnings([]);
+                    setUploadError(null);
+                    setPendingUpload(null);
+                  }}
+                >
                   Clear
                 </Button>
               </div>
@@ -169,6 +326,40 @@ export default function Uploads() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Upload duplicate filename?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {blockingConflicts.length > 0 ? (
+                <>
+                  The following file{blockingConflicts.length === 1 ? "" : "s"} already exist
+                  in the queue or are being processed:{" "}
+                  <span className="font-medium text-foreground">
+                    {blockingConflicts.join(", ")}
+                  </span>
+                  . Uploading again may create duplicate ingestion jobs.
+                </>
+              ) : (
+                uploadError ?? "This filename is already being processed for this client."
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={uploadMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={uploadMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmUploadAnyway();
+              }}
+            >
+              Upload anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card>
         <CardContent className="p-4">
