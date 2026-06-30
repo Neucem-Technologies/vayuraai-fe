@@ -1,7 +1,9 @@
 import { useEffect, type ComponentType } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/query-client";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthStore, useIsClientViewer } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
@@ -33,8 +35,6 @@ import Clients from "@/pages/clients";
 import ClientDashboard from "@/pages/client/dashboard";
 import ClientReports from "@/pages/client/reports";
 
-const queryClient = new QueryClient();
-
 function ProtectedRoute({
   component: Component,
   requireOnboarding = true,
@@ -46,9 +46,17 @@ function ProtectedRoute({
   requireActiveClient?: boolean;
   consultantOnly?: boolean;
 }) {
-  const { isAuthenticated, onboardingComplete, access } = useAuthStore();
+  const { isAuthenticated, onboardingComplete, access, authHydrated } = useAuthStore();
   const activeClientId = useActiveClientStore((s) => s.activeClientId);
   const isClientViewer = access?.kind === "client_viewer";
+
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
@@ -78,7 +86,14 @@ function ProtectedRoute({
 }
 
 function ClientProtectedRoute({ component: Component }: { component: ComponentType }) {
-  const { isAuthenticated, access } = useAuthStore();
+  const { isAuthenticated, access, authHydrated } = useAuthStore();
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
   if (!isAuthenticated) return <Redirect to="/login" />;
   if (access?.kind !== "client_viewer") return <Redirect to="/clients" />;
   return (
@@ -89,15 +104,30 @@ function ClientProtectedRoute({ component: Component }: { component: ComponentTy
 }
 
 function OnboardingRoute({ component: Component }: { component: ComponentType }) {
-  const { isAuthenticated, access } = useAuthStore();
+  const { isAuthenticated, access, authHydrated } = useAuthStore();
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
   if (!isAuthenticated) return <Redirect to="/login" />;
   if (access?.kind === "client_viewer") return <Redirect to="/client/dashboard" />;
   return <Component />;
 }
 
 function Router() {
-  const { isAuthenticated, onboardingComplete } = useAuthStore();
+  const { isAuthenticated, onboardingComplete, authHydrated } = useAuthStore();
   const isClientViewer = useIsClientViewer();
+
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
 
   return (
     <Switch>
@@ -152,6 +182,7 @@ function App() {
           <Router />
         </WouterRouter>
         <Toaster />
+        <SonnerToaster position="top-center" richColors closeButton />
       </TooltipProvider>
     </QueryClientProvider>
   );

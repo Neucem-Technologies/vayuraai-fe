@@ -39,11 +39,11 @@ export default function OnboardingOrganization() {
   const form = useForm<FormVals>({
     resolver: zodResolver(schema),
     defaultValues: {
-      firmName: "Greenedge Sustainability Advisors",
-      entityType: "LLP",
+      firmName: "",
+      entityType: "",
       country: "India",
-      teamSize: "6-15",
-      primaryService: "ESG & Carbon Reporting",
+      teamSize: "",
+      primaryService: "",
       plan: "Pro",
     },
   });

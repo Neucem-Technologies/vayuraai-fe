@@ -6,8 +6,6 @@ import {
   Trash2,
   MapPin,
   Users as UsersIcon,
-  Mail,
-  Phone,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -33,6 +31,13 @@ import {
 } from "@/components/ui/dialog";
 import { useFacilities } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
+import { displayValue } from "@/lib/portfolio";
+
+function statusBadgeClass(status: string | undefined) {
+  if (status === "Active") return "bg-primary/10 text-primary border-primary/20";
+  if (status === "Onboarding") return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
+  return "bg-muted text-muted-foreground border-border";
+}
 
 export default function SettingsOrganization() {
   const { data: facilities, isLoading } = useFacilities();
@@ -48,8 +53,8 @@ export default function SettingsOrganization() {
         subtitle={`Legal entity, reporting boundary, and operational facilities for ${clientName}`}
         actions={
           activeClient && (
-            <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
-              {activeClient.reportingStandard} · {activeClient.reportingStatus}
+            <Badge variant="outline" className={statusBadgeClass(activeClient.status)}>
+              {activeClient.status}
             </Badge>
           )
         }
@@ -68,8 +73,8 @@ export default function SettingsOrganization() {
                 <Input className="mt-1" defaultValue={activeClient?.name ?? ""} data-testid="input-client-legal-name" />
               </div>
               <div>
-                <Label className="text-sm">CIN / Registration number</Label>
-                <Input className="mt-1" defaultValue="U72200KA2014PTC076234" />
+                <Label className="text-sm">Short name</Label>
+                <Input className="mt-1" defaultValue={activeClient?.shortName ?? ""} />
               </div>
               <div>
                 <Label className="text-sm">Country</Label>
@@ -84,44 +89,19 @@ export default function SettingsOrganization() {
               </div>
               <div>
                 <Label className="text-sm">Industry</Label>
-                <Input className="mt-1" defaultValue={activeClient?.industry ?? ""} />
-              </div>
-              <div>
-                <Label className="text-sm">Fiscal year start</Label>
-                <Select defaultValue={activeClient?.fiscalYearStart ?? "April"}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["January","April","July","October"].map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm">Reporting standard</Label>
-                <Select defaultValue={activeClient?.reportingStandard ?? "BRSR"}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BRSR">BRSR (SEBI)</SelectItem>
-                    <SelectItem value="GRI">GRI Standards</SelectItem>
-                    <SelectItem value="BOTH">Both BRSR and GRI</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm">Default currency</Label>
-                <Select defaultValue="INR">
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="INR">INR — Indian Rupee</SelectItem>
-                    <SelectItem value="USD">USD — US Dollar</SelectItem>
-                    <SelectItem value="EUR">EUR — Euro</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input className="mt-1" defaultValue={displayValue(activeClient?.industry)} />
               </div>
               <div>
                 <Label className="text-sm">Engagement since</Label>
                 <Input className="mt-1" defaultValue={activeClient?.engagementSince ?? ""} readOnly />
+              </div>
+              <div>
+                <Label className="text-sm">Client portal</Label>
+                <Input
+                  className="mt-1"
+                  defaultValue={activeClient?.clientViewerEnabled ? "Enabled" : "Disabled"}
+                  readOnly
+                />
               </div>
             </div>
             <div className="flex justify-end pt-4 border-t">
@@ -148,43 +128,9 @@ export default function SettingsOrganization() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-1">
-                <div className="text-center p-2 rounded-md border">
-                  <div className="text-lg font-semibold tabular-nums">{facilities?.length ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground">Facilities</div>
-                </div>
-                <div className="text-center p-2 rounded-md border">
-                  <div className="text-lg font-semibold tabular-nums">{activeClient?.dataSourcesActive ?? 0}</div>
-                  <div className="text-[11px] text-muted-foreground">Data sources</div>
-                </div>
-                <div className="text-center p-2 rounded-md border">
-                  <div className="text-lg font-semibold tabular-nums">{activeClient ? `${(activeClient.employees / 1000).toFixed(1)}K` : "—"}</div>
-                  <div className="text-[11px] text-muted-foreground">Employees</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Primary contact</CardTitle>
-              <CardDescription>The person at {activeClient?.shortName ?? "the client"} who owns sustainability data.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary text-sm font-semibold flex items-center justify-center">
-                  {activeClient?.primaryContact.name.split(" ").map(n => n[0]).join("").substring(0, 2) ?? "—"}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-medium">{activeClient?.primaryContact.name}</div>
-                  <div className="text-xs text-muted-foreground">{activeClient?.primaryContact.role}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground text-xs pt-2 border-t">
-                <Mail className="w-3.5 h-3.5" /> {activeClient?.primaryContact.email}
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                <Phone className="w-3.5 h-3.5" /> Lead consultant: {activeClient?.leadConsultant}
+              <div className="text-center p-4 rounded-md border">
+                <div className="text-lg font-semibold tabular-nums">{facilities?.length ?? 0}</div>
+                <div className="text-[11px] text-muted-foreground">Facilities in boundary</div>
               </div>
             </CardContent>
           </Card>
@@ -263,7 +209,7 @@ export default function SettingsOrganization() {
               </div>
               <div>
                 <Label className="text-sm">Country</Label>
-                <Input className="mt-1" defaultValue="India" />
+                <Input className="mt-1" defaultValue={activeClient?.country ?? "India"} />
               </div>
             </div>
             <div>
