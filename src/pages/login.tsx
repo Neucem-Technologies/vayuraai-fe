@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,9 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuthStore } from "@/hooks/use-auth";
-import { useActiveClientStore } from "@/hooks/use-active-client";
-import { MOCK_SME_USER } from "@/lib/mock-data";
 import * as authApi from "@/lib/auth-api";
+import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
 
@@ -31,9 +30,19 @@ const formSchema = z.object({
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const { isAuthenticated, onboardingComplete, authHydrated } = useAuthStore();
   const establishSessionFromLogin = useAuthStore((state) => state.establishSessionFromLogin);
-  const setActiveClient = useActiveClientStore((s) => s.setActiveClient);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!authHydrated || !isAuthenticated) return;
+    const { access, onboardingComplete: completed } = useAuthStore.getState();
+    if (access?.kind === "client_viewer") {
+      setLocation("/client/dashboard");
+      return;
+    }
+    setLocation(completed ? "/clients" : "/onboarding/organization");
+  }, [authHydrated, isAuthenticated, onboardingComplete, setLocation]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -48,20 +57,11 @@ export default function Login() {
     setIsLoading(true);
     try {
       const data = await authApi.login(values.email, values.password);
-      await establishSessionFromLogin(data.accessToken, data.user);
+      const profile = await establishSessionFromLogin(data.accessToken);
       await new Promise((resolve) => setTimeout(resolve, 700));
-      const { onboardingComplete, access, user } = useAuthStore.getState();
-      if (access?.kind === "client_viewer") {
-        setLocation("/client/dashboard");
-        return;
-      }
-      const userType = user?.userType ?? "consultant";
-      if (userType === "sme") {
-        setActiveClient(MOCK_SME_USER.clientId ?? null);
-        setLocation(onboardingComplete ? "/dashboard" : "/onboarding/organization");
-      } else {
-        setLocation(onboardingComplete ? "/clients" : "/onboarding/organization");
-      }
+      const { onboardingComplete } = useAuthStore.getState();
+      const path = resolvePostLoginPath(profile, onboardingComplete);
+      setLocation(path);
     } catch (e) {
       const { title, description } = getAuthErrorPresentation(e, "login");
       toast({ variant: "destructive", title, description });

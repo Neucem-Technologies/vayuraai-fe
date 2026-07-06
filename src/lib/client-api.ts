@@ -1,4 +1,6 @@
 import { apiFetch } from '@/lib/api-client';
+import type { AcceptClientInviteResponse } from '@vayura/api-contracts/auth';
+import type { ClientDashboard, ClientReportsResponse } from '@vayura/api-contracts/client';
 
 const ACCESS_TOKEN_KEY = 'vayura_access_token';
 
@@ -6,11 +8,8 @@ function token(): string | null {
   return localStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
-export type ClientDashboard = {
-  organisation: { id: string; legalName: string; shortName: string };
-  emissions: { scope1Kg: number; scope2Kg: number; scope3Kg: number; period: string };
-  showConsultantBranding: boolean;
-};
+export type { ClientDashboard };
+export type ClientReportRow = ClientReportsResponse['reports'][number];
 
 export async function fetchClientDashboard(): Promise<ClientDashboard> {
   const accessToken = token();
@@ -21,18 +20,10 @@ export async function fetchClientDashboard(): Promise<ClientDashboard> {
   });
 }
 
-export type ClientReportRow = {
-  id: string;
-  name: string;
-  period: string;
-  status: string;
-  generatedAt: string | null;
-};
-
 export async function fetchClientReports(): Promise<ClientReportRow[]> {
   const accessToken = token();
   if (!accessToken) throw new Error('Not authenticated');
-  const data = await apiFetch<{ reports: ClientReportRow[] }>('/api/v1/client/reports', {
+  const data = await apiFetch<ClientReportsResponse>('/api/v1/client/reports', {
     method: 'GET',
     accessToken,
   });
@@ -42,12 +33,9 @@ export async function fetchClientReports(): Promise<ClientReportRow[]> {
 export async function acceptClientInvite(
   inviteToken: string,
   password: string,
-): Promise<{ accessToken: string; tokenType: 'Bearer'; orgId: string }> {
-  return apiFetch<{ accessToken: string; tokenType: 'Bearer'; orgId: string }>(
-    '/api/v1/auth/accept-client-invite',
-    {
-      method: 'POST',
-      body: JSON.stringify({ token: inviteToken, password }),
-    },
-  );
+): Promise<AcceptClientInviteResponse> {
+  return apiFetch<AcceptClientInviteResponse>('/api/v1/auth/accept-client-invite', {
+    method: 'POST',
+    body: JSON.stringify({ token: inviteToken, password }),
+  });
 }

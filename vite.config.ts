@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      '@vayura/api-contracts': path.resolve(__dirname, 'shared'),
     },
     dedupe: ['react', 'react-dom'],
   },

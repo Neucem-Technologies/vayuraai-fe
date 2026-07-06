@@ -1,136 +1,201 @@
 import { create } from 'zustand';
-import { MOCK_SME_USER, MOCK_USER, type AppUser } from '@/lib/mock-data';
 import * as authApi from '@/lib/auth-api';
-import type { PublicUser, UserType } from '@/lib/auth-api';
-import type { AccessProfile } from '@/lib/organisations-api';
+import { buildAppUser, type AppUser } from '@/lib/user';
+import type { MeProfile } from '@vayura/api-contracts/auth';
+import type { AccessProfile } from '@vayura/api-contracts/auth';
+import type { TenantDto } from '@vayura/api-contracts/tenancy';
+import type { UserType } from '@vayura/api-contracts/common';
+import {
+  getUserType,
+  isClientViewer,
+  isConsultantWorkspace,
+} from '@vayura/api-contracts/profile';
+import { useActiveClientStore } from '@/hooks/use-active-client-store';
+import { clearAppQueryCache } from '@/lib/query-client';
 
-export type { UserType } from '@/lib/auth-api';
+export type { UserType, AccessProfile, MeProfile };
 
 const ACTIVE_CLIENT_KEY = 'vayura_active_client';
-export type { AccessProfile };
-
-/** Bearer token storage key (shared with backend session contract). */
 export const TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
-function mapApiUser(
-  api: PublicUser & { fullName?: string | null },
-  tenantName?: string,
-  clientOrgName?: string,
-): AppUser {
-  const userType = api.userType ?? readStoredUserType();
-  const base = userType === 'sme' ? MOCK_SME_USER : MOCK_USER;
-  const local = api.email.split('@')[0]?.replace(/\./g, ' ') ?? 'User';
-  const title = local
-    .split(' ')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-  return {
-    ...base,
-    id: api.id,
-    email: api.email,
-    name: api.fullName?.trim() || title,
-    userType,
-    company: clientOrgName ?? tenantName ?? base.company,
-    avatar: api.email.slice(0, 2).toUpperCase(),
-    clientId: undefined,
-  };
+function companyFromProfile(profile: MeProfile): string {
+  const clientOrg = isClientViewer(profile) ? profile.organisations[0] : undefined;
+  return clientOrg?.legalName ?? profile.tenant?.name ?? '—';
+}
+
+function syncActiveClientWithAccess(profile: MeProfile): void {
+  const { setActiveClient } = useActiveClientStore.getState();
+  const stored = localStorage.getItem(ACTIVE_CLIENT_KEY);
+  const allowed = new Set(profile.access.allowedOrgIds);
+
+  if (isClientViewer(profile)) {
+    const orgId = profile.access.orgId ?? profile.organisations[0]?.id ?? null;
+    setActiveClient(orgId);
+    return;
+  }
+
+  if (stored && (profile.organisations.some((o) => o.id === stored) || allowed.has(stored))) {
+    setActiveClient(stored);
+    return;
+  }
+
+  const firstAccessibleOrgId =
+    profile.organisations[0]?.id ?? profile.access.allowedOrgIds[0] ?? null;
+  setActiveClient(firstAccessibleOrgId);
 }
 
 interface AuthState {
   user: AppUser | null;
+  tenant: TenantDto | null;
   access: AccessProfile | null;
   isAuthenticated: boolean;
   onboardingComplete: boolean;
+  authHydrated: boolean;
   hydrate: () => Promise<void>;
-  establishSessionFromLogin: (accessToken: string, apiUser: PublicUser) => Promise<void>;
+  refreshSession: () => Promise<void>;
+  establishSessionFromLogin: (accessToken: string) => Promise<MeProfile>;
   establishSessionFromInvite: (accessToken: string, orgId: string) => Promise<void>;
   logout: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
 }
 
-function readStoredUserType(): UserType {
-  const v = localStorage.getItem(USER_TYPE_KEY);
-  return v === 'sme' ? 'sme' : 'consultant';
+function clearAuthSession(set: (partial: Partial<AuthState>) => void): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_TYPE_KEY);
+  localStorage.removeItem('vayura_auth');
+  localStorage.removeItem(ACTIVE_CLIENT_KEY);
+  useActiveClientStore.getState().setActiveClient(null);
+  clearAppQueryCache();
+  set({
+    user: null,
+    tenant: null,
+    access: null,
+    isAuthenticated: false,
+    onboardingComplete: false,
+  });
+}
+
+function isUnauthorizedError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'status' in err &&
+    (err as { status: number }).status === 401
+  );
+}
+
+async function loadSessionFromToken(
+  token: string,
+  set: (partial: Partial<AuthState>) => void,
+): Promise<void> {
+  const profile = await authApi.fetchMe(token);
+  if (isConsultantWorkspace(profile)) {
+    const { completed } = await authApi.fetchOnboardingStatus(token);
+    applyProfile(profile, set);
+    set({ onboardingComplete: completed });
+    persistAuthSnapshot(
+      useAuthStore.getState().user!,
+      profile.tenant,
+      profile.access,
+      true,
+      completed,
+    );
+  } else {
+    applyProfile(profile, set);
+    persistAuthSnapshot(
+      useAuthStore.getState().user!,
+      profile.tenant,
+      profile.access,
+      true,
+      useAuthStore.getState().onboardingComplete,
+    );
+  }
 }
 
 function persistAuthSnapshot(
   user: AppUser,
-  access: AccessProfile | null,
+  tenant: TenantDto | null,
+  access: AccessProfile,
   isAuthenticated: boolean,
   onboardingComplete: boolean,
 ): void {
   localStorage.setItem(
     'vayura_auth',
-    JSON.stringify({ user, access, isAuthenticated, onboardingComplete }),
+    JSON.stringify({ user, tenant, access, isAuthenticated, onboardingComplete }),
   );
 }
 
-function applyProfile(
-  profile: authApi.MeProfile,
-  set: (partial: Partial<AuthState>) => void,
-): void {
-  const clientOrg = profile.access.kind === 'client_viewer' ? profile.organisations[0] : undefined;
-  const user = mapApiUser(profile.user, profile.tenant?.name, clientOrg?.legalName);
-  if (clientOrg) {
-    user.clientId = clientOrg.id;
-    localStorage.setItem(ACTIVE_CLIENT_KEY, clientOrg.id);
+function applyProfile(profile: MeProfile, set: (partial: Partial<AuthState>) => void): AppUser {
+  const user = buildAppUser({
+    id: profile.user.id,
+    email: profile.user.email,
+    fullName: profile.user.fullName,
+    userType: getUserType(profile),
+    company: companyFromProfile(profile),
+  });
+
+  if (isClientViewer(profile) && profile.organisations[0]) {
+    user.clientId = profile.organisations[0].id;
   }
+
+  syncActiveClientWithAccess(profile);
+
   set({
     user,
+    tenant: profile.tenant,
     access: profile.access,
     isAuthenticated: true,
-    onboardingComplete: profile.access.kind === 'client_viewer',
+    onboardingComplete: isClientViewer(profile),
   });
+  return user;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  tenant: null,
   access: null,
   isAuthenticated: false,
   onboardingComplete: false,
+  authHydrated: false,
 
   hydrate: async () => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) {
-      set({ user: null, access: null, isAuthenticated: false, onboardingComplete: false });
+      set({
+        user: null,
+        tenant: null,
+        access: null,
+        isAuthenticated: false,
+        onboardingComplete: false,
+        authHydrated: true,
+      });
       return;
     }
     try {
-      const profile = await authApi.fetchMe(token);
-      if (profile.access.kind === 'consultant') {
-        const { completed } = await authApi.fetchOnboardingStatus(token);
-        applyProfile(profile, set);
-        set({ onboardingComplete: completed });
-        persistAuthSnapshot(
-          useAuthStore.getState().user!,
-          profile.access,
-          true,
-          completed,
-        );
-      } else {
-        applyProfile(profile, set);
+      await loadSessionFromToken(token, set);
+    } catch (err) {
+      if (isUnauthorizedError(err)) {
+        clearAuthSession(set);
       }
-    } catch {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_TYPE_KEY);
-      localStorage.removeItem('vayura_auth');
-      set({ user: null, access: null, isAuthenticated: false, onboardingComplete: false });
+    } finally {
+      set({ authHydrated: true });
     }
   },
 
+  refreshSession: async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    await loadSessionFromToken(token, set);
+  },
+
   establishSessionFromLogin: async (accessToken) => {
+    clearAppQueryCache();
     localStorage.setItem(TOKEN_KEY, accessToken);
     const profile = await authApi.fetchMe(accessToken);
-    localStorage.setItem(USER_TYPE_KEY, profile.user.userType);
-    if (profile.access.kind === 'consultant') {
-      const { completed } = await authApi.fetchOnboardingStatus(accessToken);
-      applyProfile(profile, set);
-      set({ onboardingComplete: completed });
-      persistAuthSnapshot(useAuthStore.getState().user!, profile.access, true, completed);
-    } else {
-      applyProfile(profile, set);
-    }
+    localStorage.setItem(USER_TYPE_KEY, getUserType(profile));
+    await loadSessionFromToken(accessToken, set);
+    return profile;
   },
 
   establishSessionFromInvite: async (accessToken, orgId) => {
@@ -138,7 +203,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem(USER_TYPE_KEY, 'sme');
     const profile = await authApi.fetchMe(accessToken);
     applyProfile(profile, set);
-    localStorage.setItem(ACTIVE_CLIENT_KEY, orgId);
+    useActiveClientStore.getState().setActiveClient(orgId);
     set({ onboardingComplete: true });
   },
 
@@ -147,11 +212,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await authApi.logout(token);
     } finally {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_TYPE_KEY);
-      localStorage.removeItem('vayura_auth');
-      localStorage.removeItem(ACTIVE_CLIENT_KEY);
-      set({ user: null, access: null, isAuthenticated: false, onboardingComplete: false });
+      clearAuthSession(set);
+      set({ authHydrated: true });
     }
   },
 
@@ -161,7 +223,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     await authApi.completeOnboarding(token);
     set((s) => {
       const next = { ...s, onboardingComplete: true };
-      if (s.user) persistAuthSnapshot(s.user, s.access, true, true);
+      if (s.user && s.access) {
+        persistAuthSnapshot(s.user, s.tenant, s.access, true, true);
+      }
       return next;
     });
   },
@@ -173,4 +237,8 @@ export function useIsClientViewer(): boolean {
 
 export function useIsConsultantAdmin(): boolean {
   return useAuthStore((s) => s.access?.permissions.canManageClientPortal ?? false);
+}
+
+export function useTenant(): TenantDto | null {
+  return useAuthStore((s) => s.tenant);
 }

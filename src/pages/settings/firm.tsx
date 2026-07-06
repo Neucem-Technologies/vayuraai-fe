@@ -24,13 +24,23 @@ import {
   Check,
   Sparkles,
 } from "lucide-react";
-import { MOCK_FIRM, MOCK_CLIENTS } from "@/lib/mock-data";
+import { useTenant } from "@/hooks/use-auth";
+import { usePortfolioStats } from "@/hooks/use-data";
+import type { TenantPlan } from "@vayura/api-contracts/common";
+
+function formatPlan(plan: TenantPlan | undefined): string {
+  if (!plan) return "—";
+  return plan.charAt(0).toUpperCase() + plan.slice(1);
+}
 
 export default function FirmSettings() {
+  const tenant = useTenant();
+  const { data: stats } = usePortfolioStats();
   const [revealKey, setRevealKey] = useState(false);
   const [copied, setCopied] = useState(false);
   const [whiteLabel, setWhiteLabel] = useState(true);
 
+  const firmName = tenant?.name ?? "";
   const apiKey = "vyr_live_a4f2b81c93d45e2710fa8b37c612e9d4";
   const masked = "vyr_live_••••••••••••••••••••••••••••";
 
@@ -44,12 +54,15 @@ export default function FirmSettings() {
     <div>
       <PageHeader
         title="Firm settings"
-        subtitle={`Manage ${MOCK_FIRM.name}, your subscription, and consultant-wide preferences`}
+        subtitle={
+          tenant
+            ? `Manage ${tenant.name}, your subscription, and consultant-wide preferences`
+            : "Manage your firm, subscription, and consultant-wide preferences"
+        }
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {/* Firm profile */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -62,11 +75,11 @@ export default function FirmSettings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Firm legal name</Label>
-                  <Input defaultValue={MOCK_FIRM.name} className="mt-1.5" data-testid="input-firm-name" />
+                  <Input defaultValue={firmName} className="mt-1.5" data-testid="input-firm-name" />
                 </div>
                 <div>
                   <Label>Display name</Label>
-                  <Input defaultValue={MOCK_FIRM.shortName} className="mt-1.5" data-testid="input-firm-display" />
+                  <Input defaultValue={firmName} className="mt-1.5" data-testid="input-firm-display" />
                 </div>
                 <div>
                   <Label>Country of incorporation</Label>
@@ -84,19 +97,19 @@ export default function FirmSettings() {
                 </div>
                 <div>
                   <Label>Website</Label>
-                  <Input defaultValue={MOCK_FIRM.website} className="mt-1.5" />
+                  <Input placeholder="yourfirm.com" className="mt-1.5" />
                 </div>
                 <div className="md:col-span-2">
                   <Label>Registered address</Label>
-                  <Input defaultValue="404 Brigade Gateway, Malleshwaram, Bengaluru — 560055" className="mt-1.5" />
+                  <Input placeholder="Street, city, state, postal code" className="mt-1.5" />
                 </div>
                 <div>
                   <Label>Billing contact</Label>
-                  <Input defaultValue={MOCK_FIRM.billingEmail} className="mt-1.5" />
+                  <Input type="email" placeholder="billing@yourfirm.com" className="mt-1.5" />
                 </div>
                 <div>
                   <Label>GSTIN</Label>
-                  <Input defaultValue="29AABCG4421R1Z2" className="mt-1.5" />
+                  <Input placeholder="Tax registration number" className="mt-1.5" />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2 border-t">
@@ -106,7 +119,6 @@ export default function FirmSettings() {
             </CardContent>
           </Card>
 
-          {/* Branding / White-label */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -121,7 +133,9 @@ export default function FirmSettings() {
               <div className="flex items-center justify-between p-3 border rounded-md">
                 <div>
                   <div className="font-medium text-sm">White-label exports</div>
-                  <div className="text-xs text-muted-foreground">Client reports show {MOCK_FIRM.shortName} branding instead of Vayura.</div>
+                  <div className="text-xs text-muted-foreground">
+                    Client reports show {firmName || "your firm"} branding instead of Vayura.
+                  </div>
                 </div>
                 <Button
                   variant={whiteLabel ? "default" : "outline"}
@@ -142,13 +156,12 @@ export default function FirmSettings() {
                 </div>
                 <div>
                   <Label>Footer disclaimer (PDF)</Label>
-                  <Input defaultValue="Prepared by Greenedge Sustainability Advisors LLP" className="mt-1.5" />
+                  <Input placeholder={`Prepared by ${firmName || "your firm"}`} className="mt-1.5" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* API & integrations */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -187,7 +200,6 @@ export default function FirmSettings() {
             </CardContent>
           </Card>
 
-          {/* Security */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -220,9 +232,7 @@ export default function FirmSettings() {
           </Card>
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
-          {/* Plan card */}
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
@@ -236,39 +246,25 @@ export default function FirmSettings() {
                   <span className="text-xs uppercase tracking-wider text-muted-foreground">Current plan</span>
                   <Sparkles className="w-3.5 h-3.5 text-primary" />
                 </div>
-                <div className="font-semibold text-lg">{MOCK_FIRM.plan}</div>
-                <div className="text-xs text-muted-foreground mt-1">Renews on 12 May 2026</div>
+                <div className="font-semibold text-lg">{formatPlan(tenant?.plan)}</div>
               </div>
 
               <div className="space-y-2 text-sm">
-                <UsageRow label="Active clients" value={`${MOCK_CLIENTS.filter(c => c.status === "Active").length} / 25`} />
-                <UsageRow label="Consultants seats" value="7 / 15" />
-                <UsageRow label="Documents this month" value="412 / 5,000" />
-                <UsageRow label="Reports generated" value="14 / unlimited" />
+                <UsageRow
+                  label="Active clients"
+                  value={String(stats?.activeEngagements ?? 0)}
+                />
+                <UsageRow label="Total clients" value={String(stats?.totalClients ?? 0)} />
               </div>
 
               <div className="pt-3 border-t space-y-2">
                 <Button className="w-full" variant="outline" data-testid="button-upgrade-plan">
-                  Upgrade to Enterprise
+                  Upgrade plan
                 </Button>
                 <Button className="w-full" variant="ghost" size="sm">
                   View invoices
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Engagement summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Engagement health</CardTitle>
-              <CardDescription>Across all active clients this quarter.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <HealthRow label="Reports submitted on time" value="12 / 14" status="ok" />
-              <HealthRow label="Average review turnaround" value="1.4 days" status="ok" />
-              <HealthRow label="Clients with overdue items" value="2" status="warn" />
-              <HealthRow label="Net Promoter Score" value="62" status="ok" />
             </CardContent>
           </Card>
         </div>
@@ -294,17 +290,6 @@ function UsageRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function HealthRow({ label, value, status }: { label: string; value: string; status: "ok" | "warn" }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={`font-medium tabular-nums ${status === "warn" ? "text-amber-600" : "text-primary"}`}>
-        {value}
-      </span>
     </div>
   );
 }
