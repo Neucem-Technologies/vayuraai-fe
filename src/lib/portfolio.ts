@@ -1,4 +1,5 @@
 import type { OrganisationDto } from '@/lib/organisations-api';
+import type { ConsolidationApproach } from '@vayura/api-contracts/common';
 
 export type ClientOrgStatus = 'Active' | 'Onboarding' | 'Paused';
 
@@ -11,6 +12,7 @@ export type ClientOrg = {
   industry: string | null;
   country: string;
   status: ClientOrgStatus;
+  consolidationApproach: ConsolidationApproach;
   clientViewerEnabled: boolean;
   showConsultantBranding: boolean;
   engagementSince: string;
@@ -71,6 +73,7 @@ export function organisationToClientOrg(org: OrganisationDto): ClientOrg {
     industry: org.industry,
     country: org.country,
     status: STATUS_LABEL[org.status],
+    consolidationApproach: org.consolidationApproach ?? 'operational',
     clientViewerEnabled: org.clientViewerEnabled,
     showConsultantBranding: org.showConsultantBranding,
     engagementSince: new Date(org.createdAt).toLocaleDateString('en-IN', {

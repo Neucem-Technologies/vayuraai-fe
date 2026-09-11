@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchClientDashboard } from "@/lib/client-api";
+import { useAuthStore } from "@/hooks/use-auth";
 
 function formatKg(kg: number): string {
   if (kg === 0) return "—";
@@ -11,9 +12,11 @@ function formatKg(kg: number): string {
 }
 
 export default function ClientDashboard() {
+  const orgId = useAuthStore((s) => s.access?.orgId ?? s.access?.allowedOrgIds?.[0] ?? null);
   const { data, isLoading } = useQuery({
-    queryKey: ["client-dashboard"],
+    queryKey: ["client-dashboard", orgId],
     queryFn: fetchClientDashboard,
+    enabled: !!orgId,
   });
 
   return (

@@ -15,6 +15,9 @@ export type UploadDto = {
   createdAt: string;
   updatedAt: string;
   processedAt: string | null;
+  /** Activity / billing period derived from document dates (not upload month). */
+  periodStart: string;
+  periodEnd: string;
 };
 
 export type PipelineRunDto = {
@@ -115,6 +118,12 @@ export type ActivityRecordDto = {
   factorValue: number;
   factorUnit: string;
   scope: string;
+  factorRegion: string;
+  factorRegionCode: string | null;
+  factorEffectiveYear: number;
+  factorSourceVersion: string;
+  factorSourceKey: string;
+  factorSourceName: string;
   kgCO2e: number;
   sourceFilename: string;
   approvedByUserId: string;

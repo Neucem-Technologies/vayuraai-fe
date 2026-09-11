@@ -5,11 +5,13 @@ import type {
   AuthRegisterResponse,
   MeProfile,
   OnboardingStatusResponse,
+  ProvisionFirmInput,
+  ProvisionFirmResponse,
   PublicUser,
 } from '@vayura/api-contracts/auth';
 import type { UserType } from '@vayura/api-contracts/common';
 
-export type { MeProfile, PublicUser, UserType, AuthLoginResponse };
+export type { MeProfile, PublicUser, UserType, AuthLoginResponse, ProvisionFirmInput };
 
 export async function register(
   email: string,
@@ -48,6 +50,17 @@ export async function completeOnboarding(accessToken: string): Promise<Onboardin
   return apiFetch<OnboardingStatusResponse>('/api/v1/auth/onboarding/complete', {
     method: 'POST',
     body: JSON.stringify({}),
+    accessToken,
+  });
+}
+
+export async function provisionFirm(
+  accessToken: string,
+  input: ProvisionFirmInput,
+): Promise<ProvisionFirmResponse> {
+  return apiFetch<ProvisionFirmResponse>('/api/v1/auth/onboarding/firm', {
+    method: 'POST',
+    body: JSON.stringify(input),
     accessToken,
   });
 }

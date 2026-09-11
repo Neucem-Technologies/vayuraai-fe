@@ -36,10 +36,6 @@ export function uploadDtoToDoc(
   uploadedBy = 'You',
   lineItemCount = 0,
 ): UploadDoc {
-  const created = new Date(row.createdAt);
-  const periodEnd = new Date(created.getFullYear(), created.getMonth() + 1, 0);
-  const periodStart = new Date(created.getFullYear(), created.getMonth(), 1);
-
   return {
     id: row.id,
     filename: row.originalFilename,
@@ -47,8 +43,8 @@ export function uploadDtoToDoc(
     uploadedBy,
     size: formatSize(row.sizeBytes),
     date: row.createdAt,
-    periodStart: periodStart.toISOString(),
-    periodEnd: periodEnd.toISOString(),
+    periodStart: `${row.periodStart}T00:00:00.000Z`,
+    periodEnd: `${row.periodEnd}T00:00:00.000Z`,
     status: mapIngestionStatus(row.status, row.reviewedAt),
     facility: displayFacility(row.facilityLabel),
     category: row.reviewedAt ? 'Approved' : row.status === 'completed' ? 'Classified' : 'Pending classification',

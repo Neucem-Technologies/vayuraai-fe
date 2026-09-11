@@ -125,3 +125,53 @@ export async function listActivityRecords(orgId: string): Promise<ActivityRecord
   );
   return data.records;
 }
+
+export type UploadContent = {
+  blob: Blob;
+  mimeType: string;
+  filename: string;
+  objectUrl: string;
+};
+
+/** Fetch original upload bytes for inline preview / download. */
+export async function fetchUploadContent(
+  orgId: string,
+  uploadId: string,
+  options?: { download?: boolean },
+): Promise<UploadContent> {
+  const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+  if (!baseUrl) throw new Error('VITE_API_BASE_URL is not set.');
+  const accessToken = token();
+  if (!accessToken) throw new Error('Not authenticated');
+
+  const qs = options?.download ? '?download=1' : '';
+  const res = await fetch(
+    `${baseUrl}/api/v1/organisations/${orgId}/uploads/${uploadId}/content${qs}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    },
+  );
+  if (!res.ok) {
+    let message = 'Could not load the original file.';
+    try {
+      const json = (await res.json()) as { error?: { message?: string } };
+      if (json?.error?.message) message = json.error.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+
+  const mimeType = res.headers.get('content-type') || 'application/octet-stream';
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = /filename="([^"]+)"/i.exec(disposition);
+  const filename = match?.[1] ?? 'document';
+  const blob = await res.blob();
+  return {
+    blob,
+    mimeType,
+    filename,
+    objectUrl: URL.createObjectURL(blob),
+  };
+}

@@ -59,6 +59,12 @@ import {
 } from "lucide-react";
 import type { ClientOrg } from "@/lib/portfolio";
 import { displayValue } from "@/lib/portfolio";
+import { OrgReportingFields } from "@/components/org-reporting-fields";
+import {
+  orgReportingFormDefaults,
+  orgReportingFormSchema,
+  reportingFormToApi,
+} from "@/lib/org-reporting-profile";
 
 const INDUSTRIES = [
   "IT / ITES",
@@ -77,12 +83,14 @@ const INDUSTRIES = [
   "Other",
 ];
 
-const addClientSchema = z.object({
-  legalName: z.string().min(2, "Legal name is required"),
-  shortName: z.string().min(1, "Short name is required"),
-  industry: z.string().min(1, "Industry is required"),
-  country: z.string().min(2, "Country is required").default("India"),
-});
+const addClientSchema = z
+  .object({
+    legalName: z.string().min(2, "Legal name is required"),
+    shortName: z.string().min(1, "Short name is required"),
+    industry: z.string().min(1, "Industry is required"),
+    country: z.string().min(2, "Country is required").default("India"),
+  })
+  .merge(orgReportingFormSchema);
 
 function statusColor(status: ClientOrg["status"]) {
   if (status === "Active") return "bg-primary/10 text-primary border-primary/20";
@@ -119,6 +127,7 @@ export default function Clients() {
         shortName: values.shortName,
         industry: values.industry,
         country: values.country,
+        ...reportingFormToApi(values),
       }),
     onSuccess: async (org) => {
       setActiveClient(org.id);
@@ -151,6 +160,7 @@ export default function Clients() {
       shortName: "",
       industry: "",
       country: "India",
+      ...orgReportingFormDefaults,
     },
   });
 
@@ -444,6 +454,10 @@ export default function Clients() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              <div className="rounded-md border p-4">
+                <OrgReportingFields control={addForm.control} />
               </div>
 
               <DialogFooter className="pt-2">

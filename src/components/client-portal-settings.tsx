@@ -34,9 +34,14 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
   const togglePortal = useMutation({
     mutationFn: (enabled: boolean) =>
       updateOrganisation(org.id, { clientViewerEnabled: enabled }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["clients"] });
-      queryClient.invalidateQueries({ queryKey: ["client", org.id] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["clients"] });
+      await queryClient.invalidateQueries({ queryKey: ["client", org.id] });
+      await queryClient.invalidateQueries({ queryKey: ["organisation", org.id] });
+      toast({
+        title: "Client portal updated",
+        description: "Portal access setting saved for this organisation.",
+      });
     },
     onError: (e) => {
       toast({

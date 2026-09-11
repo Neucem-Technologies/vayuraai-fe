@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,6 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TOKEN_KEY, useAuthStore } from "@/hooks/use-auth";
+import { provisionFirm } from "@/lib/auth-api";
+import { ApiRequestError } from "@/lib/api-client";
+import { toast } from "@/hooks/use-toast";
+import type { TenantPlan } from "@vayura/api-contracts/common";
 
 const schema = z.object({
   firmName: z.string().min(2, "Required"),
@@ -33,8 +39,16 @@ const schema = z.object({
 
 type FormVals = z.infer<typeof schema>;
 
+const PLAN_TO_API: Record<FormVals["plan"], TenantPlan> = {
+  Starter: "starter",
+  Pro: "growth",
+  Enterprise: "enterprise",
+};
+
 export default function OnboardingOrganization() {
   const [, setLocation] = useLocation();
+  const refreshSession = useAuthStore((s) => s.refreshSession);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<FormVals>({
     resolver: zodResolver(schema),
@@ -48,8 +62,35 @@ export default function OnboardingOrganization() {
     },
   });
 
-  const onSubmit = (_unused: FormVals) => {
-    setLocation("/onboarding/industry");
+  const onSubmit = async (values: FormVals) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      toast({
+        title: "Sign in required",
+        description: "Please sign in again to set up your firm.",
+        variant: "destructive",
+      });
+      setLocation("/login");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await provisionFirm(token, {
+        name: values.firmName,
+        plan: PLAN_TO_API[values.plan],
+      });
+      await refreshSession();
+      setLocation("/onboarding/industry");
+    } catch (e) {
+      const message =
+        e instanceof ApiRequestError
+          ? e.message
+          : "Could not create your consulting firm workspace.";
+      toast({ title: "Could not set up firm", description: message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -179,8 +220,8 @@ export default function OnboardingOrganization() {
             />
           </div>
           <div className="flex justify-end pt-4 border-t">
-            <Button type="submit" data-testid="button-continue">
-              Continue
+            <Button type="submit" disabled={isSubmitting} data-testid="button-continue">
+              {isSubmitting ? "Creating firm..." : "Continue"}
               <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </div>

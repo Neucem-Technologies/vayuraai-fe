@@ -1,9 +1,11 @@
-import { MOCK_FACILITIES, MOCK_USERS, MOCK_SME_USERS, MOCK_REPORTS } from '@/lib/mock-data';
+import { MOCK_USERS, MOCK_SME_USERS } from '@/lib/mock-data';
 import { listEmissionFactors } from '@/lib/emission-factors-api';
 import { organisationToClientOrg, computePortfolioStats } from '@/lib/portfolio';
 import { computeDashboardStats, emptyDashboardStats } from '@/lib/dashboard';
 import { getOrganisation, listOrganisations } from '@/lib/organisations-api';
+import { listFacilities } from '@/lib/facilities-api';
 import { getUploadDetail, listUploads, listActivityRecords } from '@/lib/uploads-api';
+import { listReports } from '@/lib/reports-api';
 import { activityRecordToEmission } from '@/lib/activity-record-mapper';
 import { uploadDtoToDoc } from '@/lib/upload-mapper';
 import { useActiveClientStore } from '@/hooks/use-active-client-store';
@@ -18,8 +20,9 @@ function hasSession(): boolean {
 export function useClients() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const access = useAuthStore((s) => s.access);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   return useQuery({
-    queryKey: ['clients', isAuthenticated, access?.kind, access?.allowedOrgIds],
+    queryKey: ['clients', tenantId, isAuthenticated, access?.kind, access?.allowedOrgIds],
     queryFn: async () => {
       if (!isAuthenticated || !hasSession() || !access) return [];
       if (access.kind === 'client_viewer' && access.allowedOrgIds.length > 0) {
@@ -51,6 +54,23 @@ export function useClient(id: string | null) {
   });
 }
 
+/** Raw organisation DTO (for settings that need API fields beyond portfolio mapping). */
+export function useOrganisation(id: string | null) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const access = useAuthStore((s) => s.access);
+  return useQuery({
+    queryKey: ['organisation', id, isAuthenticated, access?.kind],
+    queryFn: async () => {
+      if (!id || !isAuthenticated || !hasSession() || !access) return null;
+      if (access.kind === 'client_viewer' && !access.allowedOrgIds.includes(id)) {
+        return null;
+      }
+      return getOrganisation(id);
+    },
+    enabled: !!id && isAuthenticated && !!access,
+  });
+}
+
 export function usePortfolioStats() {
   const { data: clients } = useClients();
   return useQuery({
@@ -64,9 +84,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function useEmissions() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['emissions', orgId, isAuthenticated],
+    queryKey: ['emissions', tenantId, orgId, isAuthenticated],
     queryFn: async () => {
       if (!orgId || !hasSession() || !isAuthenticated) return [];
       const records = await listActivityRecords(orgId);
@@ -78,9 +99,10 @@ export function useEmissions() {
 
 export function useUploads() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['uploads', orgId, isAuthenticated],
+    queryKey: ['uploads', tenantId, orgId, isAuthenticated],
     queryFn: async () => {
       if (!orgId || !hasSession() || !isAuthenticated) return [];
       const rows = await listUploads(orgId);
@@ -143,13 +165,19 @@ export function useFactors(options?: { region?: string; year?: number }) {
   });
 }
 
-export function useFacilities() {
+export function useFacilities(orgId?: string | null) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
+  const activeClientId = useActiveClientStore((s) => s.activeClientId);
+  const resolvedOrgId = orgId === undefined ? activeClientId : orgId;
+
   return useQuery({
-    queryKey: ['facilities'],
+    queryKey: ['facilities', tenantId, resolvedOrgId],
     queryFn: async () => {
-      await delay(300);
-      return MOCK_FACILITIES;
+      if (!resolvedOrgId) return [];
+      return listFacilities(resolvedOrgId);
     },
+    enabled: isAuthenticated && !!resolvedOrgId && hasSession(),
   });
 }
 
@@ -174,26 +202,52 @@ export function useSmeUsers() {
 }
 
 export function useReports() {
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return useQuery({
-    queryKey: ['reports'],
+    queryKey: ['reports', tenantId, orgId, isAuthenticated],
     queryFn: async () => {
-      await delay(400);
-      return MOCK_REPORTS;
+      if (!orgId || !hasSession() || !isAuthenticated) return [];
+      return listReports(orgId);
+    },
+    enabled: !!orgId && isAuthenticated,
+    refetchInterval: (query) => {
+      const rows = query.state.data ?? [];
+      return rows.some((r) => r.status === 'generating') ? 3000 : false;
     },
   });
 }
 
 export function useDashboardStats() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
+  const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const uploadsQuery = useUploads();
+  const emissionsQuery = useEmissions();
+  const reportsQuery = useReports();
 
   return useQuery({
-    queryKey: ['dashboardStats', orgId, uploadsQuery.dataUpdatedAt],
+    queryKey: [
+      'dashboardStats',
+      tenantId,
+      orgId,
+      uploadsQuery.dataUpdatedAt,
+      emissionsQuery.dataUpdatedAt,
+      reportsQuery.dataUpdatedAt,
+    ],
     queryFn: async () => {
       if (!orgId) return emptyDashboardStats();
-      return computeDashboardStats(uploadsQuery.data ?? []);
+      return computeDashboardStats(
+        uploadsQuery.data ?? [],
+        emissionsQuery.data ?? [],
+        reportsQuery.data?.length ?? 0,
+      );
     },
-    enabled: !orgId || uploadsQuery.isFetched,
+    enabled:
+      !!orgId &&
+      uploadsQuery.isFetched &&
+      emissionsQuery.isFetched &&
+      reportsQuery.isFetched,
     staleTime: 30_000,
   });
 }

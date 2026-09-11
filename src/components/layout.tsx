@@ -135,6 +135,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <span className="text-sm font-medium truncate leading-tight">
                       {activeClient?.shortName ?? "Select a client"}
                     </span>
+                    {activeClient?.name && activeClient.name !== activeClient.shortName && (
+                      <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">
+                        {activeClient.name}
+                      </span>
+                    )}
                   </div>
                   <ChevronsUpDown className="w-3.5 h-3.5 text-sidebar-foreground/50 shrink-0" />
                 </button>
@@ -155,7 +160,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
                       <span className="text-sm font-medium truncate">{c.shortName}</span>
-                      <span className="text-[11px] text-muted-foreground truncate">{c.industry}</span>
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        {c.name}
+                        {c.industry ? ` · ${c.industry}` : ""}
+                      </span>
                     </div>
                     {c.id === activeClientId && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </DropdownMenuItem>

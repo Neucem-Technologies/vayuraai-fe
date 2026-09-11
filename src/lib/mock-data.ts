@@ -178,6 +178,10 @@ export interface EmissionRecord {
   unit: string;
   emissionFactor: number;
   factorName: string;
+  factorEffectiveYear?: number;
+  factorSourceVersion?: string;
+  factorSourceName?: string;
+  factorRegion?: string;
   kgCO2e: number;
   sourceDoc: string;
   status: "Approved" | "Ready for Approval" | "Needs Review";

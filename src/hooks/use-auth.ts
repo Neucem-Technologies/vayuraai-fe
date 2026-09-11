@@ -10,12 +10,15 @@ import {
   isClientViewer,
   isConsultantWorkspace,
 } from '@vayura/api-contracts/profile';
-import { useActiveClientStore } from '@/hooks/use-active-client-store';
+import { useActiveClientStore, readStoredActiveClient } from '@/hooks/use-active-client-store';
 import { clearAppQueryCache } from '@/lib/query-client';
+import {
+  ACTIVE_TENANT_STORAGE_KEY,
+  clearWorkspaceSessionState,
+} from '@/lib/session-reset';
 
 export type { UserType, AccessProfile, MeProfile };
 
-const ACTIVE_CLIENT_KEY = 'vayura_active_client';
 export const TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
@@ -24,19 +27,44 @@ function companyFromProfile(profile: MeProfile): string {
   return clientOrg?.legalName ?? profile.tenant?.name ?? '—';
 }
 
+/**
+ * Bind the active client to the current tenant's organisations only.
+ * Never reuse an org id from a previous firm after logout/login.
+ */
 function syncActiveClientWithAccess(profile: MeProfile): void {
   const { setActiveClient } = useActiveClientStore.getState();
-  const stored = localStorage.getItem(ACTIVE_CLIENT_KEY);
-  const allowed = new Set(profile.access.allowedOrgIds);
+  const currentTenantId = profile.tenant?.id ?? null;
+  const storedTenant = localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
+  const tenantChanged = !!currentTenantId && storedTenant !== currentTenantId;
+
+  if (currentTenantId) {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, currentTenantId);
+  } else {
+    localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+  }
 
   if (isClientViewer(profile)) {
+    const allowed = new Set(
+      profile.access.allowedOrgIds.length > 0
+        ? profile.access.allowedOrgIds
+        : profile.organisations.map((o) => o.id),
+    );
+    const storedClient = readStoredActiveClient(currentTenantId);
+    if (storedClient && allowed.has(storedClient)) {
+      setActiveClient(storedClient);
+      return;
+    }
     const orgId = profile.access.orgId ?? profile.organisations[0]?.id ?? null;
     setActiveClient(orgId);
     return;
   }
 
-  if (stored && (profile.organisations.some((o) => o.id === stored) || allowed.has(stored))) {
-    setActiveClient(stored);
+  const orgIds = new Set(profile.organisations.map((o) => o.id));
+  const storedClient = readStoredActiveClient(currentTenantId);
+  // Prefer organisations list from /me (already tenant-scoped). Do not trust a stale
+  // active-client id across tenant switches.
+  if (!tenantChanged && storedClient && orgIds.has(storedClient)) {
+    setActiveClient(storedClient);
     return;
   }
 
@@ -64,9 +92,7 @@ function clearAuthSession(set: (partial: Partial<AuthState>) => void): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_TYPE_KEY);
   localStorage.removeItem('vayura_auth');
-  localStorage.removeItem(ACTIVE_CLIENT_KEY);
-  useActiveClientStore.getState().setActiveClient(null);
-  clearAppQueryCache();
+  clearWorkspaceSessionState();
   set({
     user: null,
     tenant: null,
@@ -190,21 +216,30 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   establishSessionFromLogin: async (accessToken) => {
+    clearWorkspaceSessionState();
     clearAppQueryCache();
     localStorage.setItem(TOKEN_KEY, accessToken);
     const profile = await authApi.fetchMe(accessToken);
     localStorage.setItem(USER_TYPE_KEY, getUserType(profile));
     await loadSessionFromToken(accessToken, set);
+    // Ensure client binding runs after profile is applied (tenant-scoped).
+    syncActiveClientWithAccess(profile);
+    clearAppQueryCache();
     return profile;
   },
 
   establishSessionFromInvite: async (accessToken, orgId) => {
+    clearWorkspaceSessionState();
     localStorage.setItem(TOKEN_KEY, accessToken);
     localStorage.setItem(USER_TYPE_KEY, 'sme');
     const profile = await authApi.fetchMe(accessToken);
     applyProfile(profile, set);
     useActiveClientStore.getState().setActiveClient(orgId);
+    if (profile.tenant?.id) {
+      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, profile.tenant.id);
+    }
     set({ onboardingComplete: true });
+    clearAppQueryCache();
   },
 
   logout: async () => {

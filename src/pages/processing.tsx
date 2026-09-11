@@ -12,12 +12,21 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -41,13 +50,23 @@ import { type ConfidenceLevel, type ExtractedLineItem, type EmissionFactor } fro
 import { mergeFactorOptions } from "@/lib/factor-options";
 import { useActiveClientStore } from "@/hooks/use-active-client-store";
 import { uploadDtoToDoc } from "@/lib/upload-mapper";
-import { approveUpload, saveUploadReview, type ReviewLineInput } from "@/lib/uploads-api";
+import {
+  approveUpload,
+  fetchUploadContent,
+  saveUploadReview,
+  type ReviewLineInput,
+} from "@/lib/uploads-api";
 import { cn } from "@/lib/utils";
 import { friendlyIngestionError } from "@/lib/ingestion-errors";
 import { formatEmissionMass } from "@/lib/format-emissions";
 import { computeLineKgCo2e } from "@/lib/emission-calc";
 import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import { AddFacilityDialog } from "@/components/add-facility-dialog";
+import { SpreadsheetPreview } from "@/components/spreadsheet-preview";
+import { isSpreadsheetFile } from "@/lib/is-spreadsheet";
 import { toast } from "sonner";
+
+const ADD_FACILITY_VALUE = "__add_facility__";
 
 type ReviewLineItem = ExtractedLineItem & {
   rowIndex?: number;
@@ -116,6 +135,14 @@ export default function Processing() {
     year: reportingYear,
   });
   const { data: orgFacilities = [] } = useFacilities();
+  const [addFacilityOpen, setAddFacilityOpen] = useState(false);
+  const [facilityTargetLineId, setFacilityTargetLineId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewMime, setPreviewMime] = useState<string>("");
+  const [previewName, setPreviewName] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const factorOptions = useMemo(
     () => mergeFactorOptions(libraryFactors, detail?.lineItems ?? []),
@@ -215,6 +242,9 @@ export default function Processing() {
       void queryClient.invalidateQueries({ queryKey: ["uploadDetail", orgId, params.id] });
       void queryClient.invalidateQueries({ queryKey: ["uploads", orgId] });
       void queryClient.invalidateQueries({ queryKey: ["emissions", orgId] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.invalidateQueries({ queryKey: ["clients"] });
+      if (orgId) void queryClient.invalidateQueries({ queryKey: ["client", orgId] });
       toast.success("Approved and posted", {
         description: (() => {
           const f = formatEmissionMass(data.totalKgCO2e);
@@ -274,6 +304,55 @@ export default function Processing() {
 
   const activeStepLabel = live?.stepLabel;
 
+  const closePreview = () => {
+    setPreviewOpen(false);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewBlob(null);
+    setPreviewMime("");
+    setPreviewName("");
+  };
+
+  const openPreview = async () => {
+    if (!orgId || !params.id) return;
+    setPreviewLoading(true);
+    try {
+      const content = await fetchUploadContent(orgId, params.id);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(content.objectUrl);
+      setPreviewBlob(content.blob);
+      setPreviewMime(content.mimeType);
+      setPreviewName(content.filename);
+      setPreviewOpen(true);
+    } catch (e) {
+      toast.error("Could not open original file", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const previewIsSpreadsheet = isSpreadsheetFile(previewMime, previewName);
+  const previewIsImage = previewMime.startsWith("image/");
+  const previewIsPdf = previewMime.includes("pdf");
+
+  const downloadOriginal = async () => {
+    if (!orgId || !params.id) return;
+    try {
+      const content = await fetchUploadContent(orgId, params.id, { download: true });
+      const a = document.createElement("a");
+      a.href = content.objectUrl;
+      a.download = content.filename;
+      a.click();
+      URL.revokeObjectURL(content.objectUrl);
+    } catch (e) {
+      toast.error("Download failed", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    }
+  };
+
   return (
     <>
       <Link href="/uploads">
@@ -323,6 +402,29 @@ export default function Processing() {
                   <span>Uploaded by {upload.uploadedBy}</span>
                   <span>•</span>
                   <span>{upload.size}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openPreview()}
+                    disabled={previewLoading}
+                    data-testid="button-preview-original"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    {previewLoading ? "Loading…" : "Preview original"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void downloadOriginal()}
+                    data-testid="button-download-original"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
                 </div>
               </div>
             </div>
@@ -423,7 +525,15 @@ export default function Processing() {
                         <Select
                           value={item.facility || ORGANISATION_WIDE_FACILITY}
                           disabled={!canReview}
-                          onValueChange={(v) => updateItem(item.id, { facility: v })}
+                          onValueChange={(v) => {
+                            if (v === ADD_FACILITY_VALUE) {
+                              if (!orgId) return;
+                              setFacilityTargetLineId(item.id);
+                              setAddFacilityOpen(true);
+                              return;
+                            }
+                            updateItem(item.id, { facility: v });
+                          }}
                         >
                           <SelectTrigger className="h-8 w-40">
                             <SelectValue />
@@ -434,6 +544,11 @@ export default function Processing() {
                                 {name}
                               </SelectItem>
                             ))}
+                            {orgId && canReview && (
+                              <SelectItem value={ADD_FACILITY_VALUE} className="text-xs">
+                                + Add facility…
+                              </SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -559,6 +674,64 @@ export default function Processing() {
           )}
         </div>
       </div>
+
+      {orgId && (
+        <AddFacilityDialog
+          orgId={orgId}
+          open={addFacilityOpen}
+          onOpenChange={(open) => {
+            setAddFacilityOpen(open);
+            if (!open) setFacilityTargetLineId(null);
+          }}
+          defaultCountry={client?.country ?? "India"}
+          clientName={client?.name}
+          onCreated={(facility) => {
+            if (facilityTargetLineId) {
+              updateItem(facilityTargetLineId, { facility: facility.name });
+            }
+            setFacilityTargetLineId(null);
+          }}
+        />
+      )}
+
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open) closePreview();
+          else setPreviewOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Original file</DialogTitle>
+            <DialogDescription>{previewName || upload?.filename}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 rounded-md border bg-muted/20 overflow-hidden">
+            {previewUrl && previewIsImage && (
+              <img src={previewUrl} alt={previewName} className="max-h-full max-w-full mx-auto object-contain" />
+            )}
+            {previewUrl && previewIsPdf && (
+              <iframe title={previewName} src={previewUrl} className="w-full h-full border-0" />
+            )}
+            {previewBlob && previewIsSpreadsheet && (
+              <SpreadsheetPreview blob={previewBlob} filename={previewName} />
+            )}
+            {previewUrl && !previewIsImage && !previewIsPdf && !previewIsSpreadsheet && (
+              <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
+                <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Inline preview is available for PDF, images, Excel, and CSV. Download to open this
+                  file locally.
+                </p>
+                <Button size="sm" onClick={() => void downloadOriginal()}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download original
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

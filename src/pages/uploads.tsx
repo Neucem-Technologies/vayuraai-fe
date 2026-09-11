@@ -29,6 +29,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -50,9 +57,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AddFacilityDialog } from "@/components/add-facility-dialog";
+import { SpreadsheetPreview } from "@/components/spreadsheet-preview";
 import { useUploads, useFacilities } from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client";
-import { uploadDocuments } from "@/lib/uploads-api";
+import { fetchUploadContent, uploadDocuments } from "@/lib/uploads-api";
+import { isSpreadsheetFile } from "@/lib/is-spreadsheet";
 import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
 import { ApiRequestError } from "@/lib/api-client";
 import {
@@ -61,7 +71,10 @@ import {
   findCompletedFilenameMatches,
 } from "@/lib/upload-dedup";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { UploadStatus } from "@/lib/mock-data";
+
+const ADD_FACILITY_VALUE = "__add_facility__";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -84,6 +97,7 @@ export default function Uploads() {
   const [tab, setTab] = useState<"all" | UploadStatus>("all");
   const [facility, setFacility] = useState<string>("all");
   const [uploadFacility, setUploadFacility] = useState(ORGANISATION_WIDE_FACILITY);
+  const [addFacilityOpen, setAddFacilityOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<File[]>([]);
   const [batchSkipped, setBatchSkipped] = useState<string[]>([]);
@@ -93,7 +107,65 @@ export default function Uploads() {
   const [pendingUpload, setPendingUpload] = useState<{ files: File[]; allowDuplicate: boolean } | null>(
     null,
   );
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewMime, setPreviewMime] = useState("");
+  const [previewName, setPreviewName] = useState("");
+  const [previewUploadId, setPreviewUploadId] = useState<string | null>(null);
+  const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewBlob(null);
+    setPreviewMime("");
+    setPreviewName("");
+    setPreviewUploadId(null);
+  };
+
+  const openPreview = async (uploadId: string) => {
+    if (!orgId) return;
+    setPreviewLoadingId(uploadId);
+    try {
+      const content = await fetchUploadContent(orgId, uploadId);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(content.objectUrl);
+      setPreviewBlob(content.blob);
+      setPreviewMime(content.mimeType);
+      setPreviewName(content.filename);
+      setPreviewUploadId(uploadId);
+      setPreviewOpen(true);
+    } catch (e) {
+      toast.error("Could not open original file", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  };
+
+  const downloadOriginal = async (uploadId: string) => {
+    if (!orgId) return;
+    try {
+      const content = await fetchUploadContent(orgId, uploadId, { download: true });
+      const a = document.createElement("a");
+      a.href = content.objectUrl;
+      a.download = content.filename;
+      a.click();
+      URL.revokeObjectURL(content.objectUrl);
+    } catch (e) {
+      toast.error("Download failed", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    }
+  };
+
+  const previewIsSpreadsheet = isSpreadsheetFile(previewMime, previewName);
+  const previewIsImage = previewMime.startsWith("image/");
+  const previewIsPdf = previewMime.includes("pdf");
 
   const uploadMutation = useMutation({
     mutationFn: ({ files, allowDuplicate, facilityLabel }: { files: File[]; allowDuplicate?: boolean; facilityLabel?: string }) => {
@@ -206,7 +278,7 @@ export default function Uploads() {
         type="file"
         multiple
         className="hidden"
-        accept=".pdf,.xlsx,.xls,.csv"
+        accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.webp"
         onChange={(e) => handleFiles(e.target.files)}
       />
 
@@ -228,14 +300,24 @@ export default function Uploads() {
             <UploadIcon className="w-6 h-6 text-primary" />
           </div>
           <h3 className="text-base font-medium text-foreground">Drop files here or click to browse</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Supports PDF invoices, Excel spreadsheets, and CSV exports up to 25 MB
+          <p className="text-sm text-muted-foreground mt-1 max-w-lg">
+            Supports PDF invoices, Excel/CSV spreadsheets, and images (JPG, PNG, WebP) up to 25 MB
           </p>
           {stagedFiles.length > 0 && (
               <div className="mt-4 w-full max-w-md text-left space-y-3">
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1.5">Assign to facility</div>
-                <Select value={uploadFacility} onValueChange={setUploadFacility}>
+                <Select
+                  value={uploadFacility}
+                  onValueChange={(value) => {
+                    if (value === ADD_FACILITY_VALUE) {
+                      if (!orgId) return;
+                      setAddFacilityOpen(true);
+                      return;
+                    }
+                    setUploadFacility(value);
+                  }}
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select facility" />
                   </SelectTrigger>
@@ -244,6 +326,9 @@ export default function Uploads() {
                     {orgFacilities.map((f) => (
                       <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
                     ))}
+                    {orgId && (
+                      <SelectItem value={ADD_FACILITY_VALUE}>+ Add facility…</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground mt-1">
@@ -413,7 +498,7 @@ export default function Uploads() {
                   <TableHead>Date</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[60px]" />
+                  <TableHead className="w-[100px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -456,20 +541,44 @@ export default function Uploads() {
                     <TableCell className="text-sm tabular-nums">{u.lineItemCount}</TableCell>
                     <TableCell><StatusBadge status={u.status} /></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setLocation(`/uploads/processing/${u.id}`)}>
-                            <Eye className="w-4 h-4 mr-2" /> View extraction
-                          </DropdownMenuItem>
-                          <DropdownMenuItem><Download className="w-4 h-4 mr-2" /> Download original</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          title="Preview original"
+                          disabled={previewLoadingId === u.id || !orgId}
+                          onClick={() => void openPreview(u.id)}
+                          data-testid={`button-preview-upload-${u.id}`}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setLocation(`/uploads/processing/${u.id}`)}>
+                              <Eye className="w-4 h-4 mr-2" /> View extraction
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={previewLoadingId === u.id || !orgId}
+                              onClick={() => void openPreview(u.id)}
+                            >
+                              <FileSpreadsheet className="w-4 h-4 mr-2" /> Preview original
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={!orgId}
+                              onClick={() => void downloadOriginal(u.id)}
+                            >
+                              <Download className="w-4 h-4 mr-2" /> Download original
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -478,6 +587,62 @@ export default function Uploads() {
           </div>
         </CardContent>
       </Card>
+
+      {orgId && (
+        <AddFacilityDialog
+          orgId={orgId}
+          open={addFacilityOpen}
+          onOpenChange={setAddFacilityOpen}
+          onCreated={(facility) => setUploadFacility(facility.name)}
+        />
+      )}
+
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open) closePreview();
+          else setPreviewOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Original file</DialogTitle>
+            <DialogDescription>{previewName}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 rounded-md border bg-muted/20 overflow-hidden">
+            {previewUrl && previewIsImage && (
+              <img
+                src={previewUrl}
+                alt={previewName}
+                className="max-h-full max-w-full mx-auto object-contain"
+              />
+            )}
+            {previewUrl && previewIsPdf && (
+              <iframe title={previewName} src={previewUrl} className="w-full h-full border-0" />
+            )}
+            {previewBlob && previewIsSpreadsheet && (
+              <SpreadsheetPreview blob={previewBlob} filename={previewName} />
+            )}
+            {previewUrl && !previewIsImage && !previewIsPdf && !previewIsSpreadsheet && (
+              <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
+                <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Inline preview is available for PDF, images, Excel, and CSV. Download to open this
+                  file locally.
+                </p>
+                <Button
+                  size="sm"
+                  disabled={!previewUploadId}
+                  onClick={() => previewUploadId && void downloadOriginal(previewUploadId)}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download original
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

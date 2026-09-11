@@ -8,8 +8,23 @@ import {
   Inbox,
   Sparkles,
   Upload,
-  Loader2,
+  TrendingUp,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as ReTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,6 +33,12 @@ import { useDashboardStats } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
 import { formatEmissions } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
+
+const SCOPE_COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+];
 
 function KpiCard({
   label,
@@ -94,6 +115,8 @@ export default function Dashboard() {
   }
 
   const clientLabel = activeClient?.name ?? "this client";
+  const hasEmissions = data.totalEmissionsKg > 0;
+  const hasTrend = data.monthlyTrend.some((m) => m.current > 0 || m.previous > 0);
 
   return (
     <>
@@ -112,9 +135,9 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard
-          label="Total emissions YTD"
+          label="Total emissions"
           value={formatEmissions(data.totalEmissions)}
-          suffix={data.totalEmissions > 0 ? "tCO2e" : undefined}
+          suffix={hasEmissions ? data.emissionsUnit : undefined}
           icon={Cloud}
           accent="primary"
         />
@@ -132,10 +155,10 @@ export default function Dashboard() {
           accent="amber"
         />
         <KpiCard
-          label="Processing"
-          value={String(data.processing)}
-          suffix={data.completed > 0 ? `· ${data.completed} done` : undefined}
-          icon={Loader2}
+          label="Reports generated"
+          value={String(data.reportsGenerated)}
+          suffix={data.processing > 0 ? `· ${data.processing} processing` : undefined}
+          icon={Sparkles}
           accent="green"
         />
       </div>
@@ -143,27 +166,116 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Monthly emissions trend</CardTitle>
-            <CardDescription>tCO2e per month — available once activity data is calculated</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Monthly emissions trend</CardTitle>
+                <CardDescription>tCO2e per month from approved activity</CardDescription>
+              </div>
+              <TrendingUp className="w-5 h-5 text-muted-foreground" />
+            </div>
           </CardHeader>
           <CardContent>
-            <ChartPlaceholder
-              title="No emissions trend yet"
-              description="Upload and process documents for this client. Monthly charts will appear here after emissions are calculated."
-            />
+            {hasTrend ? (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={data.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="curr" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="prev" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--chart-3))" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="hsl(var(--chart-3))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                    <ReTooltip
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(v: number) => [`${v.toLocaleString("en-IN")} tCO2e`, ""]}
+                    />
+                    <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+                    <Area type="monotone" dataKey="previous" name="Prior year" stroke="hsl(var(--chart-3))" fill="url(#prev)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="current" name="Activity year" stroke="hsl(var(--chart-1))" fill="url(#curr)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <ChartPlaceholder
+                title="No emissions trend yet"
+                description="Upload and approve documents for this client. Monthly charts will appear here after emissions are posted."
+              />
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>Emissions by scope</CardTitle>
-            <CardDescription>Share of total YTD emissions</CardDescription>
+            <CardDescription>Share of approved inventory</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartPlaceholder
-              title="No scope breakdown yet"
-              description="Scope 1, 2, and 3 splits will show here once ingested data is converted to emissions."
-            />
+            {data.scopeBreakdown.length > 0 ? (
+              <>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={data.scopeBreakdown}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={85}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {data.scopeBreakdown.map((_, idx) => (
+                          <Cell key={idx} fill={SCOPE_COLORS[idx % SCOPE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <ReTooltip
+                        contentStyle={{
+                          background: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                        }}
+                        formatter={(v: number) => [`${v.toLocaleString("en-IN")} tCO2e`, ""]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-2 mt-2">
+                  {data.scopeBreakdown.map((s, idx) => {
+                    const total = data.scopeBreakdown.reduce((acc, x) => acc + x.value, 0);
+                    const pct = total > 0 ? ((s.value / total) * 100).toFixed(1) : "0.0";
+                    return (
+                      <div key={s.name} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full" style={{ background: SCOPE_COLORS[idx] }} />
+                          <span className="text-foreground font-medium">{s.name}</span>
+                        </div>
+                        <span className="text-muted-foreground tabular-nums">
+                          {s.value.toLocaleString("en-IN")} ({pct}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <ChartPlaceholder
+                title="No scope breakdown yet"
+                description="Scope 1, 2, and 3 splits will show here once approved activity is in the ledger."
+              />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -175,10 +287,32 @@ export default function Dashboard() {
             <CardDescription>Largest contributors (tCO2e)</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartPlaceholder
-              title="No source ranking yet"
-              description="After documents are reviewed and emissions are computed, the largest sources will rank here."
-            />
+            {data.topSources.length > 0 ? (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data.topSources} layout="vertical" margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                    <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                    <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} width={140} />
+                    <ReTooltip
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                      }}
+                      formatter={(v: number) => [`${v.toLocaleString("en-IN")} tCO2e`, ""]}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <ChartPlaceholder
+                title="No source ranking yet"
+                description="After documents are reviewed and emissions are posted, the largest sources will rank here."
+              />
+            )}
           </CardContent>
         </Card>
 

@@ -1,4 +1,4 @@
-import type { UploadDoc } from '@/lib/mock-data';
+import type { EmissionRecord, UploadDoc } from '@/lib/mock-data';
 
 export type DashboardInsight = {
   id: string;
@@ -23,7 +23,12 @@ export type DashboardStats = {
   completed: number;
   failed: number;
   reportsGenerated: number;
+  /** Tonnes CO2e from approved activity records. */
   totalEmissions: number;
+  /** Display unit for the KPI (kg when small). */
+  emissionsUnit: 'kgCO2e' | 'tCO2e';
+  /** Raw kg for charts that prefer formatting themselves. */
+  totalEmissionsKg: number;
   scopeBreakdown: { name: string; value: number }[];
   monthlyTrend: { month: string; current: number; previous: number }[];
   topSources: { name: string; value: number }[];
@@ -40,6 +45,8 @@ export function emptyDashboardStats(): DashboardStats {
     failed: 0,
     reportsGenerated: 0,
     totalEmissions: 0,
+    emissionsUnit: 'tCO2e',
+    totalEmissionsKg: 0,
     scopeBreakdown: [],
     monthlyTrend: [],
     topSources: [],
@@ -73,16 +80,97 @@ function uploadAction(status: UploadDoc['status']): string {
   }
 }
 
-export function computeDashboardStats(uploads: UploadDoc[]): DashboardStats {
-  if (uploads.length === 0) {
+function kgToDisplayTonnes(kg: number): { value: number; unit: 'kgCO2e' | 'tCO2e' } {
+  const abs = Math.abs(kg);
+  if (abs > 0 && abs < 1000) {
+    return { value: Math.round(kg * 10) / 10, unit: 'kgCO2e' };
+  }
+  return { value: Math.round((kg / 1000) * 100) / 100, unit: 'tCO2e' };
+}
+
+function kgToTonnes(kg: number): number {
+  return Math.round((kg / 1000) * 100) / 100;
+}
+
+function parseActivityDate(iso: string): Date | null {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function buildMonthlyTrend(emissions: EmissionRecord[]): DashboardStats['monthlyTrend'] {
+  if (emissions.length === 0) return [];
+
+  const dated = emissions
+    .map((e) => ({ e, date: parseActivityDate(e.date) }))
+    .filter((x): x is { e: EmissionRecord; date: Date } => x.date !== null);
+
+  if (dated.length === 0) return [];
+
+  const latest = dated.reduce((max, x) => (x.date > max ? x.date : max), dated[0].date);
+  const year = latest.getFullYear();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const currentByMonth = new Array(12).fill(0);
+  const previousByMonth = new Array(12).fill(0);
+
+  for (const { e, date } of dated) {
+    const y = date.getFullYear();
+    const m = date.getMonth();
+    if (y === year) currentByMonth[m] += e.kgCO2e;
+    if (y === year - 1) previousByMonth[m] += e.kgCO2e;
+  }
+
+  return months.map((month, i) => ({
+    month,
+    current: kgToTonnes(currentByMonth[i]),
+    previous: kgToTonnes(previousByMonth[i]),
+  }));
+}
+
+function buildScopeBreakdown(emissions: EmissionRecord[]): DashboardStats['scopeBreakdown'] {
+  const scopes = ['Scope 1', 'Scope 2', 'Scope 3'] as const;
+  return scopes
+    .map((name) => ({
+      name,
+      value: kgToTonnes(
+        emissions.filter((e) => e.scope === name).reduce((sum, e) => sum + e.kgCO2e, 0),
+      ),
+    }))
+    .filter((s) => s.value > 0);
+}
+
+function buildTopSources(emissions: EmissionRecord[]): DashboardStats['topSources'] {
+  const byCategory = new Map<string, number>();
+  for (const e of emissions) {
+    const key = e.category?.trim() || e.activity?.trim() || 'Other';
+    byCategory.set(key, (byCategory.get(key) ?? 0) + e.kgCO2e);
+  }
+  return [...byCategory.entries()]
+    .map(([name, kg]) => ({ name, value: kgToTonnes(kg) }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
+}
+
+export function computeDashboardStats(
+  uploads: UploadDoc[],
+  emissions: EmissionRecord[] = [],
+  reportsGenerated = 0,
+): DashboardStats {
+  const approved = emissions.filter((e) => e.status === 'Approved');
+  const totalKg = approved.reduce((sum, e) => sum + e.kgCO2e, 0);
+  const display = kgToDisplayTonnes(totalKg);
+
+  if (uploads.length === 0 && approved.length === 0) {
     return {
       ...emptyDashboardStats(),
+      reportsGenerated,
       insights: [
         {
           id: 'no-uploads',
           severity: 'info',
           title: 'No documents uploaded yet',
-          detail: 'Upload electricity bills, fuel invoices, or spreadsheets to start building this client’s emissions inventory.',
+          detail:
+            'Upload electricity bills, fuel invoices, or spreadsheets to start building this client’s emissions inventory.',
           timeAgo: 'Now',
         },
       ],
@@ -122,12 +210,20 @@ export function computeDashboardStats(uploads: UploadDoc[]): DashboardStats {
       timeAgo: 'Now',
     });
   }
-  if (completed > 0 && pendingReviews === 0 && processing === 0 && failed === 0) {
+  if (approved.length > 0) {
+    insights.push({
+      id: 'emissions-ready',
+      severity: 'success',
+      title: `${approved.length} approved activit${approved.length === 1 ? 'y' : 'ies'} in the ledger`,
+      detail: 'Dashboard charts reflect posted emissions from reviewed documents.',
+      timeAgo: 'Now',
+    });
+  } else if (completed > 0 && pendingReviews === 0 && processing === 0 && failed === 0) {
     insights.push({
       id: 'all-clear',
       severity: 'success',
       title: 'All uploads processed',
-      detail: 'Emissions charts will populate once activity data is calculated from ingested documents.',
+      detail: 'Approve reviewed line items to post them to the emissions ledger and populate charts.',
       timeAgo: 'Now',
     });
   }
@@ -149,11 +245,13 @@ export function computeDashboardStats(uploads: UploadDoc[]): DashboardStats {
     processing,
     completed,
     failed,
-    reportsGenerated: 0,
-    totalEmissions: 0,
-    scopeBreakdown: [],
-    monthlyTrend: [],
-    topSources: [],
+    reportsGenerated,
+    totalEmissions: display.value,
+    emissionsUnit: display.unit,
+    totalEmissionsKg: totalKg,
+    scopeBreakdown: buildScopeBreakdown(approved),
+    monthlyTrend: buildMonthlyTrend(approved),
+    topSources: buildTopSources(approved),
     insights,
     activity,
   };

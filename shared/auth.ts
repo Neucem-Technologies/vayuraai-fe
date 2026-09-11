@@ -42,6 +42,19 @@ export type MeProfile = {
 };
 
 export type OnboardingStatusResponse = { completed: boolean };
+
+/** POST /api/v1/auth/onboarding/firm */
+export type ProvisionFirmInput = {
+  name: string;
+  plan?: 'starter' | 'growth' | 'enterprise';
+};
+
+export type ProvisionFirmResponse = {
+  created: boolean;
+  tenant: TenantDto | null;
+  profile: MeProfile | null;
+};
+
 export type LogoutResponse = { loggedOut: boolean };
 
 export type AcceptClientInviteResponse = {
