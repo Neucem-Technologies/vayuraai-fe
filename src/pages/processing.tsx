@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, Link } from "wouter";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,12 +12,21 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -32,9 +42,65 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useUpload } from "@/hooks/use-data";
-import { generateExtractedItems, MOCK_FACTORS, type ConfidenceLevel } from "@/lib/mock-data";
+import { useUploadDetail, useFactors, useClient, useFacilities } from "@/hooks/use-data";
+import { useIngestionLiveStore } from "@/hooks/use-ingestion-live";
+import { PipelineProgress } from "@/components/pipeline-progress";
+import { EmissionFactorSelect } from "@/components/emission-factor-select";
+import { type ConfidenceLevel, type ExtractedLineItem, type EmissionFactor } from "@/lib/mock-data";
+import { mergeFactorOptions } from "@/lib/factor-options";
+import { useActiveClientStore } from "@/hooks/use-active-client-store";
+import { uploadDtoToDoc } from "@/lib/upload-mapper";
+import {
+  approveUpload,
+  fetchUploadContent,
+  saveUploadReview,
+  type ReviewLineInput,
+} from "@/lib/uploads-api";
 import { cn } from "@/lib/utils";
+import { friendlyIngestionError } from "@/lib/ingestion-errors";
+import { formatEmissionMass } from "@/lib/format-emissions";
+import { computeLineKgCo2e } from "@/lib/emission-calc";
+import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import { AddFacilityDialog } from "@/components/add-facility-dialog";
+import { SpreadsheetPreview } from "@/components/spreadsheet-preview";
+import { isSpreadsheetFile } from "@/lib/is-spreadsheet";
+import { toast } from "sonner";
+
+const ADD_FACILITY_VALUE = "__add_facility__";
+
+type ReviewLineItem = ExtractedLineItem & {
+  rowIndex?: number;
+  facility?: string;
+  kgCO2e?: number;
+  factorValue?: number;
+  factorName?: string;
+  factorUnit?: string;
+  originalUnit?: string;
+  spendAmount?: number;
+};
+
+function inferReportingYear(dates: string[]): number {
+  const years = dates
+    .map((d) => Number.parseInt(d.slice(0, 4), 10))
+    .filter((y) => Number.isFinite(y) && y >= 1990 && y <= 2100);
+  return years.length > 0 ? Math.max(...years) : new Date().getFullYear();
+}
+
+function lineKgCo2e(item: ReviewLineItem, factorsById: Map<string, EmissionFactor>): number {
+  const f = factorsById.get(item.factorId);
+  const factorValue = f?.value ?? item.factorValue ?? 0;
+  const factorUnit = f?.unit ?? item.factorUnit ?? "";
+  if (!item.factorId || factorValue <= 0) return item.kgCO2e ?? 0;
+
+  return computeLineKgCo2e({
+    quantity: item.quantity,
+    unit: item.unit,
+    originalUnit: item.originalUnit,
+    spendAmount: item.spendAmount,
+    factorValue,
+    factorUnit,
+  });
+}
 
 function ConfidenceDot({ level }: { level: ConfidenceLevel }) {
   const map = {
@@ -53,11 +119,150 @@ function ConfidenceDot({ level }: { level: ConfidenceLevel }) {
 export default function Processing() {
   const params = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
-  const { data: upload, isLoading } = useUpload(params.id);
+  const queryClient = useQueryClient();
+  const orgId = useActiveClientStore((s) => s.activeClientId);
+  const { data: client } = useClient(orgId);
+  const { data: detail, isLoading } = useUploadDetail(params.id);
+  const live = useIngestionLiveStore((s) => (params.id ? s.byUpload[params.id] : undefined));
+  const wsConnected = useIngestionLiveStore((s) => s.wsConnected);
 
-  const initialItems = useMemo(() => generateExtractedItems(params.id), [params.id]);
-  const [items, setItems] = useState(initialItems);
+  const reportingYear = useMemo(
+    () => inferReportingYear(detail?.lineItems.map((l) => l.date) ?? []),
+    [detail?.lineItems],
+  );
+  const { data: libraryFactors = [] } = useFactors({
+    region: client?.country ?? 'India',
+    year: reportingYear,
+  });
+  const { data: orgFacilities = [] } = useFacilities();
+  const [addFacilityOpen, setAddFacilityOpen] = useState(false);
+  const [facilityTargetLineId, setFacilityTargetLineId] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewMime, setPreviewMime] = useState<string>("");
+  const [previewName, setPreviewName] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const factorOptions = useMemo(
+    () => mergeFactorOptions(libraryFactors, detail?.lineItems ?? []),
+    [libraryFactors, detail?.lineItems],
+  );
+  const factorsById = useMemo(
+    () => new Map(factorOptions.map((f) => [f.id, f])),
+    [factorOptions],
+  );
+
+  const upload = detail ? uploadDtoToDoc(detail.upload, "You", detail.lineItems.length) : null;
+
+  const initialItems = useMemo((): ReviewLineItem[] => {
+    if (!detail?.lineItems.length) return [];
+    return detail.lineItems.map((line) => ({
+      id: line.id,
+      rowIndex: line.rowIndex,
+      description: line.description,
+      category: line.category,
+      quantity: line.quantity,
+      unit: line.unit,
+      vendor: line.vendor,
+      date: line.date || "—",
+      facility: line.facility,
+      confidence: line.confidence as ConfidenceLevel,
+      factorId: line.factorId,
+      factorName: line.factorName,
+      factorValue: line.factorValue,
+      factorUnit: line.factorUnit,
+      originalUnit: line.originalUnit,
+      spendAmount: line.spendAmount,
+      kgCO2e: line.kgCO2e,
+    }));
+  }, [detail?.lineItems]);
+
+  const [items, setItems] = useState<ReviewLineItem[]>([]);
   const [page, setPage] = useState(1);
+  const [dirty, setDirty] = useState(false);
+
+  const facilityOptions = useMemo(() => {
+    const names = new Set<string>([ORGANISATION_WIDE_FACILITY]);
+    for (const f of orgFacilities) names.add(f.name);
+    if (detail?.upload.facilityLabel) names.add(detail.upload.facilityLabel);
+    for (const item of items) {
+      if (item.facility?.trim()) names.add(item.facility.trim());
+    }
+    return Array.from(names);
+  }, [orgFacilities, detail?.upload.facilityLabel, items]);
+
+  const isApproved = Boolean(detail?.upload.reviewedAt);
+  const canReview =
+    !isApproved &&
+    (detail?.upload.status === "needs_review" || detail?.upload.status === "completed") &&
+    items.length > 0;
+
+  const toReviewPayload = (rows: ReviewLineItem[]): ReviewLineInput[] =>
+    rows.map((item, index) => ({
+      id: item.id,
+      rowIndex: item.rowIndex ?? index + 1,
+      description: item.description,
+      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
+      vendor: item.vendor === "—" ? "" : item.vendor,
+      date: item.date === "—" ? "" : item.date,
+      facility: item.facility ?? "",
+      confidence: item.confidence,
+      factorId: item.factorId,
+      originalUnit: item.originalUnit,
+      spendAmount: item.spendAmount,
+    }));
+
+  const saveReviewMutation = useMutation({
+    mutationFn: () => {
+      if (!orgId || !params.id) throw new Error("Missing upload context");
+      return saveUploadReview(orgId, params.id, { lines: toReviewPayload(items) });
+    },
+    onSuccess: () => {
+      setDirty(false);
+      void queryClient.invalidateQueries({ queryKey: ["uploadDetail", orgId, params.id] });
+      toast.success("Review saved", {
+        description: "Your edits are saved. Approve when you are ready to post to the ledger.",
+      });
+    },
+    onError: (error: Error) => {
+      toast.error("Could not save review", { description: error.message });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: () => {
+      if (!orgId || !params.id) throw new Error("Missing upload context");
+      return approveUpload(orgId, params.id, { lines: toReviewPayload(items) });
+    },
+    onSuccess: (data) => {
+      setDirty(false);
+      void queryClient.invalidateQueries({ queryKey: ["uploadDetail", orgId, params.id] });
+      void queryClient.invalidateQueries({ queryKey: ["uploads", orgId] });
+      void queryClient.invalidateQueries({ queryKey: ["emissions", orgId] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      void queryClient.invalidateQueries({ queryKey: ["clients"] });
+      if (orgId) void queryClient.invalidateQueries({ queryKey: ["client", orgId] });
+      toast.success("Approved and posted", {
+        description: (() => {
+          const f = formatEmissionMass(data.totalKgCO2e);
+          return `${data.activityRecordCount} line${data.activityRecordCount === 1 ? "" : "s"} added to emissions (${f.amount} ${f.unit}).`;
+        })(),
+      });
+      setLocation("/emissions");
+    },
+    onError: (error: Error) => {
+      toast.error("Could not approve upload", { description: error.message });
+    },
+  });
+
+  useEffect(() => {
+    setItems(initialItems);
+    setPage(1);
+    setDirty(false);
+  }, [initialItems]);
   const PAGE_SIZE = 8;
 
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
@@ -67,15 +272,14 @@ export default function Processing() {
   const highCount = items.filter((i) => i.confidence === "high").length;
 
   const updateItem = (id: string, patch: Partial<typeof items[number]>) => {
+    setDirty(true);
     setItems((cur) => cur.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   };
 
-  const totalEmissions = items.reduce((acc, i) => {
-    const f = MOCK_FACTORS.find((x) => x.id === i.factorId);
-    return acc + (f ? i.quantity * f.value : 0);
-  }, 0);
+  const totalEmissions = items.reduce((acc, i) => acc + lineKgCo2e(i, factorsById), 0);
+  const totalFormatted = formatEmissionMass(totalEmissions);
 
-  if (isLoading || !upload) {
+  if (isLoading || !upload || !detail) {
     return (
       <>
         <Skeleton className="h-8 w-64 mb-4" />
@@ -85,6 +289,70 @@ export default function Processing() {
     );
   }
 
+  const isProcessing =
+    (live?.uploadStatus ?? detail?.upload.status) === "queued" ||
+    (live?.uploadStatus ?? detail?.upload.status) === "processing";
+
+  const pipelineCompleted =
+    detail?.upload.status === "completed" ||
+    detail?.upload.status === "needs_review" ||
+    live?.uploadStatus === "completed" ||
+    live?.uploadStatus === "needs_review";
+
+  const isFailed =
+    detail?.upload.status === "failed" || live?.uploadStatus === "failed";
+
+  const activeStepLabel = live?.stepLabel;
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPreviewBlob(null);
+    setPreviewMime("");
+    setPreviewName("");
+  };
+
+  const openPreview = async () => {
+    if (!orgId || !params.id) return;
+    setPreviewLoading(true);
+    try {
+      const content = await fetchUploadContent(orgId, params.id);
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(content.objectUrl);
+      setPreviewBlob(content.blob);
+      setPreviewMime(content.mimeType);
+      setPreviewName(content.filename);
+      setPreviewOpen(true);
+    } catch (e) {
+      toast.error("Could not open original file", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const previewIsSpreadsheet = isSpreadsheetFile(previewMime, previewName);
+  const previewIsImage = previewMime.startsWith("image/");
+  const previewIsPdf = previewMime.includes("pdf");
+
+  const downloadOriginal = async () => {
+    if (!orgId || !params.id) return;
+    try {
+      const content = await fetchUploadContent(orgId, params.id, { download: true });
+      const a = document.createElement("a");
+      a.href = content.objectUrl;
+      a.download = content.filename;
+      a.click();
+      URL.revokeObjectURL(content.objectUrl);
+    } catch (e) {
+      toast.error("Download failed", {
+        description: e instanceof Error ? e.message : "Try again.",
+      });
+    }
+  };
+
   return (
     <>
       <Link href="/uploads">
@@ -92,6 +360,25 @@ export default function Processing() {
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to uploads
         </Button>
       </Link>
+
+      {isFailed && (
+        <Card className="mb-6 border-destructive/30 bg-destructive/5">
+          <CardContent className="p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <div className="font-medium text-foreground">Processing failed</div>
+              <p className="text-muted-foreground mt-1">
+                {friendlyIngestionError(detail.upload.failureReason ?? detail.pipeline?.errorMessage)}
+              </p>
+              {items.length > 0 && (
+                <p className="text-muted-foreground mt-2">
+                  Partial results from earlier steps are shown below. Re-upload after fixing the issue to run the full pipeline.
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <Card className="lg:col-span-2">
@@ -116,6 +403,29 @@ export default function Processing() {
                   <span>•</span>
                   <span>{upload.size}</span>
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void openPreview()}
+                    disabled={previewLoading}
+                    data-testid="button-preview-original"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    {previewLoading ? "Loading…" : "Preview original"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void downloadOriginal()}
+                    data-testid="button-download-original"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -125,7 +435,8 @@ export default function Processing() {
           <CardContent className="p-5 space-y-2">
             <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Calculated total</div>
             <div className="text-2xl font-semibold tracking-tight text-foreground">
-              {(totalEmissions / 1000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} <span className="text-sm font-normal text-muted-foreground">tCO2e</span>
+              {totalFormatted.amount}{" "}
+              <span className="text-sm font-normal text-muted-foreground">{totalFormatted.unit}</span>
             </div>
             <div className="flex items-center justify-between text-xs pt-2 border-t">
               <div className="flex items-center gap-1.5">
@@ -144,12 +455,30 @@ export default function Processing() {
       <Card className="mb-6 bg-primary/5 border-primary/20">
         <CardContent className="p-4 flex items-start gap-3">
           <Sparkles className="w-5 h-5 text-primary mt-0.5 shrink-0" />
-          <div className="text-sm">
-            <div className="font-medium text-foreground">Extraction summary</div>
-            <p className="text-muted-foreground mt-1 leading-snug">
-              Vayura extracted {items.length} line items from this document. {lowCount} items have low confidence and need your review before they can be approved.
-              You can edit any quantity, vendor, or emission factor below.
-            </p>
+          <div className="text-sm space-y-3 w-full">
+            <div>
+              <div className="font-medium text-foreground">Extraction summary</div>
+              <p className="text-muted-foreground mt-1 leading-snug">
+                {isProcessing
+                  ? activeStepLabel
+                    ? `Vayura is running ${activeStepLabel.toLowerCase()}… This page updates live${wsConnected ? "" : " (reconnecting…)"}.`
+                    : "Vayura is reading your document and extracting activity lines. This page updates live as each step completes."
+                  : pipelineCompleted
+                    ? isApproved
+                      ? "This upload has been approved and posted to the emissions ledger."
+                      : "Processing and emission factor calculation are complete. Review the extracted lines below before approving."
+                    : pipelineCompleted && items.length === 0
+                    ? "Pipeline finished but no activity lines were found in this document. Try a CSV export, or check that the PDF contains readable text (scanned images need manual review)."
+                    : items.length === 0
+                      ? "No activity lines could be extracted from this document. Scanned PDFs and image-only files need manual review."
+                      : `Vayura extracted ${items.length} line items from this document. ${lowCount} items have low confidence and need your review before they can be approved. You can edit any quantity, vendor, or emission factor below.`}
+              </p>
+            </div>
+            <PipelineProgress
+              isActive={isProcessing}
+              currentStep={live?.currentStep ?? detail.pipeline?.currentStep}
+              completedSteps={live?.completedSteps ?? detail.pipeline?.completedSteps ?? []}
+            />
           </div>
         </CardContent>
       </Card>
@@ -160,12 +489,13 @@ export default function Processing() {
           <CardDescription>Review, edit, and approve each row before posting to your emissions ledger.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border overflow-hidden">
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Description</TableHead>
                   <TableHead>Vendor</TableHead>
+                  <TableHead>Facility</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
                   <TableHead>Unit</TableHead>
@@ -175,9 +505,15 @@ export default function Processing() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageItems.map((item) => {
-                  const factor = MOCK_FACTORS.find((f) => f.id === item.factorId);
-                  const co2 = factor ? item.quantity * factor.value : 0;
+                {items.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-10">
+                      {isProcessing ? "Extracting line items…" : "No extracted line items to review."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                pageItems.map((item) => {
+                  const co2 = lineKgCo2e(item, factorsById);
                   return (
                     <TableRow key={item.id}>
                       <TableCell>
@@ -185,29 +521,81 @@ export default function Processing() {
                         <div className="text-xs text-muted-foreground">{item.category}</div>
                       </TableCell>
                       <TableCell className="text-sm">{item.vendor}</TableCell>
+                      <TableCell>
+                        <Select
+                          value={item.facility || ORGANISATION_WIDE_FACILITY}
+                          disabled={!canReview}
+                          onValueChange={(v) => {
+                            if (v === ADD_FACILITY_VALUE) {
+                              if (!orgId) return;
+                              setFacilityTargetLineId(item.id);
+                              setAddFacilityOpen(true);
+                              return;
+                            }
+                            updateItem(item.id, { facility: v });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent position="popper" sideOffset={4} className="max-h-72 z-[200]">
+                            {facilityOptions.map((name) => (
+                              <SelectItem key={name} value={name} className="text-xs">
+                                {name}
+                              </SelectItem>
+                            ))}
+                            {orgId && canReview && (
+                              <SelectItem value={ADD_FACILITY_VALUE} className="text-xs">
+                                + Add facility…
+                              </SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.date}</TableCell>
                       <TableCell className="text-right">
                         <Input
                           type="number"
                           value={item.quantity}
-                          onChange={(e) => updateItem(item.id, { quantity: parseFloat(e.target.value) || 0 })}
+                          disabled={!canReview}
+                          onChange={(e) => {
+                            const quantity = parseFloat(e.target.value) || 0;
+                            const draft = { ...item, quantity };
+                            updateItem(item.id, {
+                              quantity,
+                              kgCO2e: lineKgCo2e(draft as ReviewLineItem, factorsById),
+                            });
+                          }}
                           className="h-8 w-24 text-right tabular-nums ml-auto"
                         />
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{item.unit}</TableCell>
                       <TableCell>
-                        <Select value={item.factorId} onValueChange={(v) => updateItem(item.id, { factorId: v })}>
-                          <SelectTrigger className="h-8 w-56">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {MOCK_FACTORS.map((f) => (
-                              <SelectItem key={f.id} value={f.id} className="text-xs">
-                                {f.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <EmissionFactorSelect
+                          factors={factorOptions}
+                          line={{
+                            description: item.description,
+                            category: item.category,
+                            unit: item.unit,
+                          }}
+                          value={item.factorId}
+                          selectedName={item.factorName}
+                          disabled={!canReview}
+                          onValueChange={(v, next) => {
+                            const patch: Partial<ReviewLineItem> = {
+                              factorId: v,
+                              factorName: next?.name,
+                              factorValue: next?.value,
+                              factorUnit: next?.unit,
+                            };
+                            const draft = { ...item, ...patch };
+                            patch.kgCO2e = lineKgCo2e(
+                              draft as ReviewLineItem,
+                              factorsById,
+                            );
+                            updateItem(item.id, patch);
+                          }}
+                        />
                       </TableCell>
                       <TableCell className="text-right text-sm font-medium tabular-nums">
                         {co2.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
@@ -217,7 +605,8 @@ export default function Processing() {
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                })
+                )}
               </TableBody>
             </Table>
           </div>
@@ -241,7 +630,12 @@ export default function Processing() {
 
       <div className="sticky bottom-0 -mx-4 lg:-mx-8 mt-6 px-4 lg:px-8 py-4 bg-card border-t flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
-          {lowCount > 0 ? (
+          {isApproved ? (
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-600" />
+              Approved and posted to emissions
+            </span>
+          ) : lowCount > 0 ? (
             <span className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500" />
               {lowCount} items need attention before approval
@@ -254,14 +648,90 @@ export default function Processing() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline">
-            <Save className="w-4 h-4 mr-2" /> Save review
-          </Button>
-          <Button onClick={() => setLocation("/emissions")}>
-            <Send className="w-4 h-4 mr-2" /> Approve & post
-          </Button>
+          {canReview && (
+            <>
+              <Button
+                variant="outline"
+                disabled={saveReviewMutation.isPending || approveMutation.isPending}
+                onClick={() => saveReviewMutation.mutate()}
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {saveReviewMutation.isPending ? "Saving…" : dirty ? "Save review" : "Save review"}
+              </Button>
+              <Button
+                disabled={approveMutation.isPending || saveReviewMutation.isPending || items.some((i) => !i.factorId)}
+                onClick={() => approveMutation.mutate()}
+              >
+                <Send className="w-4 h-4 mr-2" />
+                {approveMutation.isPending ? "Posting…" : "Approve & post"}
+              </Button>
+            </>
+          )}
+          {isApproved && (
+            <Button onClick={() => setLocation("/emissions")}>
+              View emissions
+            </Button>
+          )}
         </div>
       </div>
+
+      {orgId && (
+        <AddFacilityDialog
+          orgId={orgId}
+          open={addFacilityOpen}
+          onOpenChange={(open) => {
+            setAddFacilityOpen(open);
+            if (!open) setFacilityTargetLineId(null);
+          }}
+          defaultCountry={client?.country ?? "India"}
+          clientName={client?.name}
+          onCreated={(facility) => {
+            if (facilityTargetLineId) {
+              updateItem(facilityTargetLineId, { facility: facility.name });
+            }
+            setFacilityTargetLineId(null);
+          }}
+        />
+      )}
+
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open) closePreview();
+          else setPreviewOpen(true);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Original file</DialogTitle>
+            <DialogDescription>{previewName || upload?.filename}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 rounded-md border bg-muted/20 overflow-hidden">
+            {previewUrl && previewIsImage && (
+              <img src={previewUrl} alt={previewName} className="max-h-full max-w-full mx-auto object-contain" />
+            )}
+            {previewUrl && previewIsPdf && (
+              <iframe title={previewName} src={previewUrl} className="w-full h-full border-0" />
+            )}
+            {previewBlob && previewIsSpreadsheet && (
+              <SpreadsheetPreview blob={previewBlob} filename={previewName} />
+            )}
+            {previewUrl && !previewIsImage && !previewIsPdf && !previewIsSpreadsheet && (
+              <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
+                <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Inline preview is available for PDF, images, Excel, and CSV. Download to open this
+                  file locally.
+                </p>
+                <Button size="sm" onClick={() => void downloadOriginal()}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download original
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

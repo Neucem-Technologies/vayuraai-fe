@@ -25,7 +25,11 @@ export async function apiFetch<T>(
   const { accessToken, ...rest } = init ?? {};
   const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = new Headers(rest.headers);
-  if (!headers.has('Content-Type') && rest.body !== undefined) {
+  if (
+    !headers.has('Content-Type') &&
+    rest.body !== undefined &&
+    !(rest.body instanceof FormData)
+  ) {
     headers.set('Content-Type', 'application/json');
   }
   if (accessToken) {
@@ -34,6 +38,7 @@ export async function apiFetch<T>(
   const res = await fetch(url, {
     ...rest,
     headers,
+    cache: 'no-store',
   });
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok) {

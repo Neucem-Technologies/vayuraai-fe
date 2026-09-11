@@ -44,12 +44,11 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useUsers, useSmeUsers } from "@/hooks/use-data";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useTenant } from "@/hooks/use-auth";
 import { useActiveClient } from "@/hooks/use-active-client";
 import {
   MOCK_ROLE_PERMISSIONS,
   MOCK_SME_ROLE_PERMISSIONS,
-  MOCK_FIRM,
   type ConsultantRole,
   type SmeRole,
 } from "@/lib/mock-data";
@@ -76,6 +75,7 @@ const SME_ROLE_DESCRIPTIONS: Record<SmeRole, string> = {
 
 export default function SettingsUsers() {
   const { user } = useAuthStore();
+  const tenant = useTenant();
   const activeClient = useActiveClient();
   const isSme = user?.userType === "sme";
   const { data: consultantUsers, isLoading: consultantsLoading } = useUsers();
@@ -101,7 +101,7 @@ export default function SettingsUsers() {
         subtitle={
           isSme
             ? `People at ${activeClient?.name ?? user?.company ?? "your organization"}. Assign roles, manage access, and control who can upload, approve, and report.`
-            : `Consultants at ${MOCK_FIRM.name}. Assign roles, manage access, and review what each role can do across every client.`
+            : `Consultants at ${tenant?.name ?? user?.company ?? "your firm"}. Assign roles, manage access, and review what each role can do across every client.`
         }
         actions={
           <Button onClick={() => setOpen(true)} data-testid="button-invite-user">
@@ -260,7 +260,7 @@ export default function SettingsUsers() {
           <DialogHeader>
             <DialogTitle>{isSme ? "Invite an organization user" : "Invite a consultant"}</DialogTitle>
             <DialogDescription>
-              They'll get an email to join {isSme ? activeClient?.name ?? user?.company ?? "your organization" : MOCK_FIRM.name}.
+              They'll get an email to join {isSme ? activeClient?.name ?? user?.company ?? "your organization" : tenant?.name ?? user?.company ?? "your firm"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

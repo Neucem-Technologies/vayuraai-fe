@@ -16,11 +16,10 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/hooks/use-auth";
-import { useActiveClientStore } from "@/hooks/use-active-client";
-import { MOCK_SME_USER } from "@/lib/mock-data";
-import { cn } from "@/lib/utils";
 import * as authApi from "@/lib/auth-api";
-import type { UserType } from "@/lib/auth-api";
+import { cn } from "@/lib/utils";
+import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
+import type { UserType } from "@vayura/api-contracts/common";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
 
@@ -34,7 +33,6 @@ const signupSchema = z.object({
 export default function Signup() {
   const [, setLocation] = useLocation();
   const establishSessionFromLogin = useAuthStore((state) => state.establishSessionFromLogin);
-  const setActiveClient = useActiveClientStore((s) => s.setActiveClient);
   const [isLoading, setIsLoading] = useState(false);
   const [accountType, setAccountType] = useState<UserType>("consultant");
 
@@ -53,16 +51,11 @@ export default function Signup() {
     try {
       await authApi.register(values.email, values.password, accountType);
       const data = await authApi.login(values.email, values.password);
-      await establishSessionFromLogin(data.accessToken, data.user);
+      const profile = await establishSessionFromLogin(data.accessToken);
       await new Promise((resolve) => setTimeout(resolve, 800));
-      const { onboardingComplete, user } = useAuthStore.getState();
-      const userType = user?.userType ?? accountType;
-      if (userType === "sme") {
-        setActiveClient(MOCK_SME_USER.clientId ?? null);
-        setLocation(onboardingComplete ? "/dashboard" : "/onboarding/organization");
-      } else {
-        setLocation(onboardingComplete ? "/clients" : "/onboarding/organization");
-      }
+      const { onboardingComplete } = useAuthStore.getState();
+      const path = resolvePostLoginPath(profile, onboardingComplete);
+      setLocation(path);
     } catch (e) {
       const { title, description, emailFieldMessage } = getAuthErrorPresentation(e, "signup");
       if (emailFieldMessage) {

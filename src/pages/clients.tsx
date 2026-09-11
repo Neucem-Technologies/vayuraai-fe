@@ -3,8 +3,12 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useClients, usePortfolioStats } from "@/hooks/use-data";
+import { createOrganisation } from "@/lib/organisations-api";
+import { ApiRequestError } from "@/lib/api-client";
 import { useActiveClientStore } from "@/hooks/use-active-client";
+import { useAuthStore } from "@/hooks/use-auth";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,14 +52,19 @@ import {
   Plus,
   Search,
   TrendingDown,
-  TrendingUp,
   AlertTriangle,
   ArrowRight,
   FileText,
-  Users,
   Layers,
 } from "lucide-react";
-import type { ClientOrg } from "@/lib/mock-data";
+import type { ClientOrg } from "@/lib/portfolio";
+import { displayValue } from "@/lib/portfolio";
+import { OrgReportingFields } from "@/components/org-reporting-fields";
+import {
+  orgReportingFormDefaults,
+  orgReportingFormSchema,
+  reportingFormToApi,
+} from "@/lib/org-reporting-profile";
 
 const INDUSTRIES = [
   "IT / ITES",
@@ -74,31 +83,19 @@ const INDUSTRIES = [
   "Other",
 ];
 
-const addClientSchema = z.object({
-  legalName: z.string().min(2, "Legal name is required"),
-  shortName: z.string().min(1, "Short name is required"),
-  industry: z.string().min(1, "Industry is required"),
-  reportingStandard: z.enum(["BRSR", "GRI", "BOTH"]),
-  contactName: z.string().min(2, "Contact name is required"),
-  contactRole: z.string().min(2, "Contact role is required"),
-  contactEmail: z.string().email("Valid email required"),
-  leadConsultant: z.string().min(2, "Lead consultant is required"),
-  engagementSince: z.string().min(1, "Engagement date is required"),
-});
+const addClientSchema = z
+  .object({
+    legalName: z.string().min(2, "Legal name is required"),
+    shortName: z.string().min(1, "Short name is required"),
+    industry: z.string().min(1, "Industry is required"),
+    country: z.string().min(2, "Country is required").default("India"),
+  })
+  .merge(orgReportingFormSchema);
 
 function statusColor(status: ClientOrg["status"]) {
   if (status === "Active") return "bg-primary/10 text-primary border-primary/20";
   if (status === "Onboarding") return "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20";
   return "bg-muted text-muted-foreground border-border";
-}
-
-function reportingColor(s: ClientOrg["reportingStatus"]) {
-  if (s === "Submitted") return "bg-primary/10 text-primary";
-  if (s === "Final Review") return "bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  if (s === "In Progress") return "bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  if (s === "Behind Schedule") return "bg-amber-500/10 text-amber-700 dark:text-amber-300";
-  if (s === "Setup") return "bg-muted text-muted-foreground";
-  return "bg-muted text-muted-foreground";
 }
 
 function formatTonnes(kg: number) {
@@ -107,12 +104,49 @@ function formatTonnes(kg: number) {
   return kg.toFixed(1);
 }
 
+const DIALOG_SELECT_CONTENT_PROPS = {
+  position: "popper" as const,
+  side: "bottom" as const,
+  align: "start" as const,
+  sideOffset: 4,
+  className: "z-[200] max-h-[min(240px,var(--radix-select-content-available-height))]",
+};
+
 export default function Clients() {
   const [, setLocation] = useLocation();
   const { setActiveClient } = useActiveClientStore();
+  const refreshSession = useAuthStore((s) => s.refreshSession);
+  const queryClient = useQueryClient();
   const { data: clients, isLoading } = useClients();
   const { data: stats } = usePortfolioStats();
   const { toast } = useToast();
+  const createClient = useMutation({
+    mutationFn: (values: z.infer<typeof addClientSchema>) =>
+      createOrganisation({
+        legalName: values.legalName,
+        shortName: values.shortName,
+        industry: values.industry,
+        country: values.country,
+        ...reportingFormToApi(values),
+      }),
+    onSuccess: async (org) => {
+      setActiveClient(org.id);
+      await refreshSession();
+      await queryClient.invalidateQueries({ queryKey: ['clients'] });
+      await queryClient.invalidateQueries({ queryKey: ['portfolioStats'] });
+      setAddOpen(false);
+      addForm.reset();
+      toast({
+        title: "Client added",
+        description: `${org.legalName} is now your active client.`,
+      });
+    },
+    onError: (err) => {
+      const message =
+        err instanceof ApiRequestError ? err.message : "Could not create client. Please try again.";
+      toast({ title: "Could not add client", description: message, variant: "destructive" });
+    },
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
@@ -125,56 +159,37 @@ export default function Clients() {
       legalName: "",
       shortName: "",
       industry: "",
-      reportingStandard: "BRSR",
-      contactName: "",
-      contactRole: "",
-      contactEmail: "",
-      leadConsultant: "",
-      engagementSince: new Date().toISOString().slice(0, 7),
+      country: "India",
+      ...orgReportingFormDefaults,
     },
   });
 
   async function onAddClient(values: z.infer<typeof addClientSchema>) {
     setAdding(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setAdding(false);
-    setAddOpen(false);
-    addForm.reset();
-    toast({
-      title: "Client added",
-      description: `${values.legalName} has been added to your portfolio and is now in onboarding.`,
-    });
+    try {
+      await createClient.mutateAsync(values);
+    } finally {
+      setAdding(false);
+    }
   }
 
   const industries = useMemo(() => {
     const set = new Set<string>();
-    clients?.forEach((c) => set.add(c.industry));
+    clients?.forEach((c) => {
+      if (c.industry) set.add(c.industry);
+    });
     return Array.from(set);
   }, [clients]);
-
-  const REPORTING_URGENCY: Record<ClientOrg["reportingStatus"], number> = {
-    "Behind Schedule": 0,
-    "Final Review": 1,
-    "In Progress": 2,
-    "Draft": 3,
-    "Setup": 4,
-    "Submitted": 5,
-  };
 
   const filtered = useMemo(() => {
     return (clients ?? [])
       .filter((c) => {
-        if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.industry.toLowerCase().includes(search.toLowerCase())) return false;
+        if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !(c.industry ?? "").toLowerCase().includes(search.toLowerCase())) return false;
         if (statusFilter !== "all" && c.status !== statusFilter) return false;
         if (industryFilter !== "all" && c.industry !== industryFilter) return false;
         return true;
       })
-      .sort((a, b) => {
-        // Urgency-first: Behind Schedule and high pending items at top
-        const urgencyDiff = (REPORTING_URGENCY[a.reportingStatus] ?? 9) - (REPORTING_URGENCY[b.reportingStatus] ?? 9);
-        if (urgencyDiff !== 0) return urgencyDiff;
-        return b.pendingItems - a.pendingItems;
-      });
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [clients, search, statusFilter, industryFilter]);
 
   const handleOpen = (id: string) => {
@@ -267,7 +282,7 @@ export default function Clients() {
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-base truncate">{client.shortName}</div>
-                        <div className="text-xs text-muted-foreground truncate">{client.industry}</div>
+                        <div className="text-xs text-muted-foreground truncate">{displayValue(client.industry)}</div>
                       </div>
                     </div>
                     <Badge variant="outline" className={statusColor(client.status)}>
@@ -275,44 +290,22 @@ export default function Clients() {
                     </Badge>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-xs mb-4">
+                  <div className="grid grid-cols-2 gap-3 text-xs mb-4">
                     <div>
-                      <div className="text-muted-foreground">YTD tCO2e</div>
-                      <div className="font-semibold text-sm mt-0.5 flex items-center gap-1">
-                        {formatTonnes(client.totalEmissionsYTD)}
-                        {client.yoyDeltaPct !== 0 && client.totalEmissionsYTD > 0 && (
-                          <span className={`text-[10px] ${client.yoyDeltaPct < 0 ? "text-primary" : "text-amber-600"}`}>
-                            {client.yoyDeltaPct < 0 ? <TrendingDown className="inline h-3 w-3" /> : <TrendingUp className="inline h-3 w-3" />}
-                            {Math.abs(client.yoyDeltaPct)}%
-                          </span>
-                        )}
-                      </div>
+                      <div className="text-muted-foreground">Country</div>
+                      <div className="font-semibold text-sm mt-0.5">{client.country}</div>
                     </div>
                     <div>
-                      <div className="text-muted-foreground">Facilities</div>
-                      <div className="font-semibold text-sm mt-0.5">{client.facilitiesCount}</div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Pending</div>
-                      <div className={`font-semibold text-sm mt-0.5 ${client.pendingItems > 10 ? "text-amber-600" : ""}`}>
-                        {client.pendingItems}
-                      </div>
+                      <div className="text-muted-foreground">Since</div>
+                      <div className="font-semibold text-sm mt-0.5">{client.engagementSince}</div>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-3 border-t">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Badge variant="secondary" className="text-[10px] py-0 h-5">{client.reportingStandard}</Badge>
-                      <span className={`text-[11px] px-1.5 py-0.5 rounded ${reportingColor(client.reportingStatus)}`}>
-                        {client.reportingStatus}
-                      </span>
-                    </div>
+                    <Badge variant="secondary" className="text-[10px] py-0 h-5">
+                      {client.clientViewerEnabled ? "Portal enabled" : "Portal off"}
+                    </Badge>
                     <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                  </div>
-
-                  <div className="text-[11px] text-muted-foreground mt-3 flex items-center gap-1.5">
-                    <Users className="w-3 h-3" />
-                    Lead: {client.leadConsultant} · Last activity {client.lastActivity}
                   </div>
                 </CardContent>
               </Card>
@@ -331,12 +324,10 @@ export default function Clients() {
                 <TableRow>
                   <TableHead>Client</TableHead>
                   <TableHead>Industry</TableHead>
-                  <TableHead>Standard</TableHead>
-                  <TableHead>Reporting</TableHead>
-                  <TableHead>Lead consultant</TableHead>
-                  <TableHead>Primary contact</TableHead>
-                  <TableHead className="text-right">Emissions YTD</TableHead>
-                  <TableHead className="text-right">Pending</TableHead>
+                  <TableHead>Country</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Engaged since</TableHead>
+                  <TableHead>Portal</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -351,22 +342,17 @@ export default function Clients() {
                         <div className="font-medium truncate">{c.shortName}</div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{c.industry}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-xs">{c.reportingStandard}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{displayValue(c.industry)}</TableCell>
+                    <TableCell className="text-sm">{c.country}</TableCell>
                     <TableCell>
-                      <span className={`text-xs px-2 py-0.5 rounded ${reportingColor(c.reportingStatus)}`}>
-                        {c.reportingStatus}
-                      </span>
+                      <Badge variant="outline" className={statusColor(c.status)}>
+                        {c.status}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-sm">{c.leadConsultant}</TableCell>
+                    <TableCell className="text-sm">{c.engagementSince}</TableCell>
                     <TableCell className="text-sm">
-                      <div className="flex flex-col">
-                        <span>{c.primaryContact.name}</span>
-                        <span className="text-xs text-muted-foreground">{c.primaryContact.role}</span>
-                      </div>
+                      {c.clientViewerEnabled ? "Enabled" : "Off"}
                     </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums text-sm">{formatTonnes(c.totalEmissionsYTD)} tCO2e</TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">{c.pendingItems}</TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -382,7 +368,7 @@ export default function Clients() {
                 ))}
                 {filtered.length === 0 && !isLoading && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-10 text-muted-foreground text-sm">
+                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
                       No clients match your filters.
                     </TableCell>
                   </TableRow>
@@ -395,7 +381,7 @@ export default function Clients() {
 
       {/* Add client dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-visible">
           <DialogHeader>
             <DialogTitle>Add a new client</DialogTitle>
             <DialogDescription>
@@ -440,11 +426,11 @@ export default function Clients() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Industry</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
                         </FormControl>
-                        <SelectContent>
+                        <SelectContent {...DIALOG_SELECT_CONTENT_PROPS}>
                           {INDUSTRIES.map((i) => (
                             <SelectItem key={i} value={i}>{i}</SelectItem>
                           ))}
@@ -457,33 +443,12 @@ export default function Clients() {
 
                 <FormField
                   control={addForm.control}
-                  name="reportingStandard"
+                  name="country"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Reporting standard</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="BRSR">BRSR (SEBI)</SelectItem>
-                          <SelectItem value="GRI">GRI Standards</SelectItem>
-                          <SelectItem value="BOTH">Both BRSR and GRI</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={addForm.control}
-                  name="engagementSince"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Engagement start</FormLabel>
+                      <FormLabel>Country</FormLabel>
                       <FormControl>
-                        <Input type="month" {...field} />
+                        <Input placeholder="e.g. India" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -491,72 +456,8 @@ export default function Clients() {
                 />
               </div>
 
-              <div className="border-t pt-4">
-                <p className="text-sm font-medium mb-3">Primary contact at client</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField
-                    control={addForm.control}
-                    name="contactName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Rohan Deshpande" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={addForm.control}
-                    name="contactRole"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Role / designation</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. ESG Director" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={addForm.control}
-                    name="contactEmail"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>Work email</FormLabel>
-                        <FormControl>
-                          <Input type="email" placeholder="name@company.in" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <FormField
-                  control={addForm.control}
-                  name="leadConsultant"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Lead consultant (from your firm)</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="Assign a consultant" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {["Aisha Sharma", "Rahul Verma", "Priya Nair", "Vikram Singh", "Neha Iyer"].map((name) => (
-                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <div className="rounded-md border p-4">
+                <OrgReportingFields control={addForm.control} />
               </div>
 
               <DialogFooter className="pt-2">

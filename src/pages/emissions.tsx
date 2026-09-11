@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEmissions } from "@/hooks/use-data";
+import { formatEmissionMass } from "@/lib/format-emissions";
 import type { EmissionRecord } from "@/lib/mock-data";
 
 export default function Emissions() {
@@ -51,7 +52,13 @@ export default function Emissions() {
   const [selected, setSelected] = useState<EmissionRecord | null>(null);
   const PAGE_SIZE = 12;
 
-  const facilities = useMemo(() => Array.from(new Set((emissions ?? []).map((e) => e.facility))), [emissions]);
+  const facilities = useMemo(
+    () =>
+      Array.from(
+        new Set((emissions ?? []).map((e) => e.facility).filter((f) => f && f !== "—")),
+      ),
+    [emissions],
+  );
 
   const EMISSION_URGENCY: Record<EmissionRecord["status"], number> = {
     "Needs Review": 0,
@@ -102,19 +109,22 @@ export default function Emissions() {
           { label: "Scope 1", val: totals.scope1, color: "text-foreground" },
           { label: "Scope 2", val: totals.scope2, color: "text-foreground" },
           { label: "Scope 3", val: totals.scope3, color: "text-foreground" },
-        ].map((m) => (
+        ].map((m) => {
+          const formatted = formatEmissionMass(m.val);
+          return (
           <Card key={m.label}>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground">{m.label}</div>
               <div className="mt-1 flex items-baseline gap-1">
                 <span className={`text-xl font-semibold tracking-tight ${m.color}`}>
-                  {(m.val / 1000).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  {formatted.amount}
                 </span>
-                <span className="text-xs text-muted-foreground">tCO2e</span>
+                <span className="text-xs text-muted-foreground">{formatted.unit}</span>
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <Card>
@@ -270,6 +280,19 @@ export default function Emissions() {
                 <div>
                   <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Emission factor used</div>
                   <div className="text-sm text-foreground">{selected.factorName}</div>
+                  <div className="mt-3 grid grid-cols-2 gap-4">
+                    {[
+                      ["Source", selected.factorSourceName || "—"],
+                      ["Region", selected.factorRegion || "—"],
+                      ["Source year", selected.factorEffectiveYear ? String(selected.factorEffectiveYear) : "—"],
+                      ["Version", selected.factorSourceVersion || "—"],
+                    ].map(([k, v]) => (
+                      <div key={k}>
+                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">{k}</div>
+                        <div className="text-sm text-foreground break-all">{v}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="rounded-md bg-primary/5 border border-primary/20 p-4">
                   <div className="text-xs text-muted-foreground">Calculated emissions</div>

@@ -1,0 +1,19 @@
+{
+  "name": "@vayura/api-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./auth": "./auth.ts",
+    "./tenancy": "./tenancy.ts",
+    "./ingestion": "./ingestion.ts",
+    "./ingestion-events": "./ingestion-events.ts",
+    "./emission-factors": "./emission-factors.ts",
+    "./client": "./client.ts",
+    "./consultant": "./consultant.ts",
+    "./common": "./common.ts",
+    "./profile": "./profile.ts",
+    "./reports": "./reports.ts"
+  }
+}

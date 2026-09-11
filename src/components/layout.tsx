@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -16,9 +17,9 @@ import {
   Building2,
   ArrowLeftRight,
 } from "lucide-react";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useTenant } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
-import { MOCK_CLIENTS, MOCK_FIRM } from "@/lib/mock-data";
+import { useClients } from "@/hooks/use-data";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,14 +32,29 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useIngestionEvents } from "@/hooks/use-ingestion-events";
 
 export function AppLayout({ children }: { children: ReactNode }) {
+  useIngestionEvents();
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuthStore();
+  const tenant = useTenant();
   const { activeClientId, setActiveClient } = useActiveClientStore();
-  const activeClient = MOCK_CLIENTS.find((c) => c.id === activeClientId) ?? null;
+  const { data: portfolioClients = [] } = useClients();
+  const activeClient = portfolioClients.find((c) => c.id === activeClientId) ?? null;
 
   const isSme = user?.userType === "sme";
+
+  // Ensure consultants always have a valid active client once the portfolio loads.
+  useEffect(() => {
+    if (isSme || portfolioClients.length === 0) return;
+
+    const currentIsValid =
+      activeClientId !== null && portfolioClients.some((c) => c.id === activeClientId);
+    if (!currentIsValid) {
+      setActiveClient(portfolioClients[0].id);
+    }
+  }, [isSme, activeClientId, portfolioClients, setActiveClient]);
 
   const handleLogout = async () => {
     setActiveClient(null);
@@ -78,7 +94,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <div className="flex flex-col leading-tight">
             <span className="font-semibold text-sm tracking-tight">Vayura AI</span>
             <span className="text-[11px] text-sidebar-foreground/60 truncate">
-              {isSme ? activeClient?.shortName ?? user?.company : MOCK_FIRM.shortName}
+              {isSme ? activeClient?.shortName ?? user?.company : tenant?.name ?? user?.company ?? "—"}
             </span>
           </div>
         </div>
@@ -97,7 +113,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 </span>
               </div>
               <Badge variant="outline" className="text-[10px] shrink-0 border-primary/20 text-primary bg-primary/10">
-                {activeClient?.reportingStandard}
+                {activeClient?.country ?? "—"}
               </Badge>
             </div>
           </div>
@@ -119,15 +135,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <span className="text-sm font-medium truncate leading-tight">
                       {activeClient?.shortName ?? "Select a client"}
                     </span>
+                    {activeClient?.name && activeClient.name !== activeClient.shortName && (
+                      <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">
+                        {activeClient.name}
+                      </span>
+                    )}
                   </div>
                   <ChevronsUpDown className="w-3.5 h-3.5 text-sidebar-foreground/50 shrink-0" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-64">
                 <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Switch client ({MOCK_CLIENTS.length})
+                  Switch client ({portfolioClients.length})
                 </DropdownMenuLabel>
-                {MOCK_CLIENTS.map((c) => (
+                {portfolioClients.map((c) => (
                   <DropdownMenuItem
                     key={c.id}
                     onClick={() => handleSwitchClient(c.id)}
@@ -139,7 +160,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     </div>
                     <div className="flex flex-col flex-1 min-w-0">
                       <span className="text-sm font-medium truncate">{c.shortName}</span>
-                      <span className="text-[11px] text-muted-foreground truncate">{c.industry}</span>
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        {c.name}
+                        {c.industry ? ` · ${c.industry}` : ""}
+                      </span>
                     </div>
                     {c.id === activeClientId && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                   </DropdownMenuItem>
@@ -226,19 +250,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </>
             )}
 
-            {/* SME: assigned consultant info */}
-            {isSme && activeClient && (
+            {/* SME: firm advisor context */}
+            {isSme && tenant && (
               <div className="mt-6 mx-1 p-3 rounded-md border bg-card">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Assigned consultant</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
-                    {activeClient.leadConsultant.split(" ").map(n => n[0]).join("")}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{activeClient.leadConsultant}</div>
-                    <div className="text-[10px] text-muted-foreground">Greenedge Advisors</div>
-                  </div>
-                </div>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Your advisor</div>
+                <div className="text-sm font-medium truncate">{tenant.name}</div>
               </div>
             )}
           </nav>
@@ -256,7 +272,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 </Avatar>
                 <div className="flex flex-col flex-1 overflow-hidden">
                   <span className="text-sm font-medium truncate">{user?.name}</span>
-                  <span className="text-xs text-sidebar-foreground/50 truncate">{user?.role}</span>
+                  <span className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</span>
                 </div>
               </div>
             </DropdownMenuTrigger>

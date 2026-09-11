@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { OnboardingShell } from "@/components/onboarding-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAuthStore } from "@/hooks/use-auth";
-import { useActiveClientStore } from "@/hooks/use-active-client";
-import { MOCK_CLIENTS } from "@/lib/mock-data";
+import { useAuthStore, useTenant } from "@/hooks/use-auth";
+import { useActiveClientStore } from "@/hooks/use-active-client-store";
+import { createOrganisation } from "@/lib/organisations-api";
+import { createFacility } from "@/lib/facilities-api";
+import { FACILITY_TYPES, GENERATION_FACILITY_TYPES, OPERATION_FACILITY_TYPES, resolveFacilityPurpose } from "@/lib/facilities";
+import { ApiRequestError } from "@/lib/api-client";
+import { toast } from "@/hooks/use-toast";
 import {
   Form,
   FormControl,
@@ -26,44 +31,131 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { OrgReportingFields } from "@/components/org-reporting-fields";
+import {
+  orgReportingFormDefaults,
+  orgReportingFormSchema,
+  reportingFormToApi,
+} from "@/lib/org-reporting-profile";
 
-const schema = z.object({
-  clientName: z.string().min(2, "Required"),
-  industry: z.string().min(1, "Required"),
-  fiscalYearStart: z.string().min(1, "Required"),
-  reportingStandard: z.enum(["BRSR", "GRI", "BOTH"]),
-  contactName: z.string().min(2, "Required"),
-  contactEmail: z.string().email("Enter a valid email"),
-  contactRole: z.string().min(2, "Required"),
-});
+const INDUSTRIES = [
+  "IT / ITES",
+  "Manufacturing",
+  "Cement",
+  "Steel",
+  "Pharmaceuticals",
+  "Textiles",
+  "FMCG",
+  "Logistics & Transport",
+  "Power Generation",
+  "Other",
+];
+
+const schema = z
+  .object({
+    legalName: z.string().min(2, "Required"),
+    shortName: z.string().min(1, "Required"),
+    industry: z.string().min(1, "Required"),
+    country: z.string().min(2, "Required"),
+    facilityName: z.string().optional(),
+    facilityType: z.string().optional(),
+    facilityAddress: z.string().optional(),
+  })
+  .merge(orgReportingFormSchema);
 
 type FormVals = z.infer<typeof schema>;
 
 export default function OnboardingDataSources() {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const completeOnboarding = useAuthStore((s) => s.completeOnboarding);
+  const refreshSession = useAuthStore((s) => s.refreshSession);
+  const tenant = useTenant();
   const setActiveClient = useActiveClientStore((s) => s.setActiveClient);
   const [isFinishing, setIsFinishing] = useState(false);
 
   const form = useForm<FormVals>({
     resolver: zodResolver(schema),
     defaultValues: {
-      clientName: "TechCorp India Pvt Ltd",
-      industry: "IT / ITES",
-      fiscalYearStart: "April",
-      reportingStandard: "BRSR",
-      contactName: "Vivek Bhatia",
-      contactEmail: "vivek.b@techcorp.in",
-      contactRole: "Head of Sustainability",
+      legalName: "",
+      shortName: "",
+      industry: "",
+      country: "India",
+      facilityName: "",
+      facilityType: FACILITY_TYPES[0],
+      facilityAddress: "",
+      ...orgReportingFormDefaults,
     },
   });
 
-  const finish = async (_unused: FormVals) => {
+  useEffect(() => {
+    if (tenant) return;
+    void refreshSession().then(() => {
+      if (!useAuthStore.getState().tenant) {
+        toast({
+          title: "Firm setup required",
+          description: "Create your consulting firm workspace before adding a client.",
+          variant: "destructive",
+        });
+        setLocation("/onboarding/organization");
+      }
+    });
+  }, [tenant, refreshSession, setLocation]);
+
+  const finish = async (values: FormVals) => {
+    if (!useAuthStore.getState().tenant) {
+      toast({
+        title: "Firm setup required",
+        description: "Create your consulting firm workspace before adding a client.",
+        variant: "destructive",
+      });
+      setLocation("/onboarding/organization");
+      return;
+    }
+
     setIsFinishing(true);
     try {
+      const org = await createOrganisation({
+        legalName: values.legalName,
+        shortName: values.shortName,
+        industry: values.industry,
+        country: values.country,
+        ...reportingFormToApi(values),
+      });
+
+      const facilityName = values.facilityName?.trim();
+      if (facilityName) {
+        try {
+          await createFacility(org.id, {
+            name: facilityName,
+            type: values.facilityType?.trim() || FACILITY_TYPES[0],
+            purpose: resolveFacilityPurpose(values.facilityType?.trim() || FACILITY_TYPES[0]),
+            address: values.facilityAddress?.trim() || "",
+            country: values.country,
+          });
+        } catch (facilityError) {
+          const message =
+            facilityError instanceof ApiRequestError
+              ? facilityError.message
+              : "Client was created, but the facility could not be added.";
+          toast({
+            title: "Client created — facility skipped",
+            description: message,
+            variant: "destructive",
+          });
+        }
+      }
+
       await completeOnboarding();
-      setActiveClient(MOCK_CLIENTS[0].id);
+      await refreshSession();
+      await queryClient.invalidateQueries({ queryKey: ["clients"] });
+      await queryClient.invalidateQueries({ queryKey: ["facilities", org.id] });
+      setActiveClient(org.id);
       setLocation("/dashboard");
+    } catch (e) {
+      const message =
+        e instanceof ApiRequestError ? e.message : "Could not create client organisation.";
+      toast({ title: "Could not add client", description: message, variant: "destructive" });
     } finally {
       setIsFinishing(false);
     }
@@ -83,19 +175,30 @@ export default function OnboardingDataSources() {
     <OnboardingShell
       step={3}
       title="Add your first client"
-      subtitle="Set up the engagement so you can start uploading data and building reports on their behalf. You can add more clients anytime from the portfolio."
+      subtitle="Create a client organisation and optionally its first facility. You can add more anytime from Client profile or Uploads."
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(finish)} className="space-y-6">
           <div className="grid sm:grid-cols-2 gap-5">
             <FormField
               control={form.control}
-              name="clientName"
+              name="legalName"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
                   <FormLabel>Client legal name</FormLabel>
                   <FormControl><Input {...field} data-testid="input-client-name" /></FormControl>
-                  <FormDescription>The legal entity that will appear on every report you generate.</FormDescription>
+                  <FormDescription>The legal entity that will appear on reports.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="shortName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Short name</FormLabel>
+                  <FormControl><Input {...field} data-testid="input-client-short-name" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -108,9 +211,9 @@ export default function OnboardingDataSources() {
                   <FormLabel>Industry</FormLabel>
                   <FormControl>
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger data-testid="select-client-industry"><SelectValue /></SelectTrigger>
+                      <SelectTrigger data-testid="select-client-industry"><SelectValue placeholder="Select industry" /></SelectTrigger>
                       <SelectContent>
-                        {["IT / ITES", "Manufacturing", "Cement", "Steel", "Pharmaceuticals", "Textiles", "FMCG", "Logistics & Transport", "Power Generation", "Other"].map((i) => (
+                        {INDUSTRIES.map((i) => (
                           <SelectItem key={i} value={i}>{i}</SelectItem>
                         ))}
                       </SelectContent>
@@ -122,78 +225,74 @@ export default function OnboardingDataSources() {
             />
             <FormField
               control={form.control}
-              name="fiscalYearStart"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Fiscal year start</FormLabel>
-                  <FormControl>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger data-testid="select-fy-start"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["January", "April", "July", "October"].map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="reportingStandard"
+              name="country"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>Reporting standard required</FormLabel>
-                  <FormControl>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger data-testid="select-reporting-standard"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="BRSR">BRSR (SEBI)</SelectItem>
-                        <SelectItem value="GRI">GRI Standards</SelectItem>
-                        <SelectItem value="BOTH">Both BRSR and GRI</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
+                  <FormLabel>Country</FormLabel>
+                  <FormControl><Input {...field} data-testid="input-client-country" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
           </div>
 
-          <div className="border-t pt-5 -mt-2">
-            <div className="text-sm font-medium mb-3">Primary contact at the client</div>
-            <div className="grid sm:grid-cols-2 gap-5">
+          <div className="rounded-lg border p-4">
+            <OrgReportingFields control={form.control} />
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-4">
+            <div>
+              <div className="text-sm font-medium text-foreground">First facility (optional)</div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Sites you can assign when uploading documents. Skip if you only need organisation-wide for now.
+              </p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="contactName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Full name</FormLabel>
-                    <FormControl><Input {...field} data-testid="input-contact-name" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="contactRole"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Title / role</FormLabel>
-                    <FormControl><Input {...field} data-testid="input-contact-role" /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="contactEmail"
+                name="facilityName"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
-                    <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" {...field} data-testid="input-contact-email" /></FormControl>
+                    <FormLabel>Facility name</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g. Bengaluru HQ" data-testid="input-onboarding-facility-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="facilityType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Type</FormLabel>
+                    <FormControl>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger data-testid="select-onboarding-facility-type"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {OPERATION_FACILITY_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
+                          {GENERATION_FACILITY_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>{t} (generation)</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="facilityAddress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="City / site address" data-testid="input-onboarding-facility-address" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -211,7 +310,7 @@ export default function OnboardingDataSources() {
                 Skip and explore
               </Button>
               <Button type="submit" disabled={isFinishing} data-testid="button-finish">
-                {isFinishing ? "Setting up workspace..." : "Add client and continue"}
+                {isFinishing ? "Creating client..." : "Add client and continue"}
                 <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
             </div>
