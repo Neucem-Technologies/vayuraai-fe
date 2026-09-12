@@ -51,7 +51,7 @@ export default function Signup() {
     try {
       await authApi.register(values.email, values.password, accountType);
       const data = await authApi.login(values.email, values.password);
-      const profile = await establishSessionFromLogin(data.accessToken);
+      const profile = await establishSessionFromLogin(data.accessToken, data.user);
       await new Promise((resolve) => setTimeout(resolve, 800));
       const { onboardingComplete } = useAuthStore.getState();
       const path = resolvePostLoginPath(profile, onboardingComplete);

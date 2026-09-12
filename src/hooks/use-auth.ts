@@ -16,11 +16,41 @@ import {
   ACTIVE_TENANT_STORAGE_KEY,
   clearWorkspaceSessionState,
 } from '@/lib/session-reset';
+import { ApiRequestError } from '@/lib/api-client';
 
 export type { UserType, AccessProfile, MeProfile };
 
 export const TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
+
+function makeFallbackProfileFromLogin(user: { id: string; email: string; userType: UserType }): MeProfile {
+  const kind = user.userType === 'sme' ? 'client_viewer' : 'consultant';
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      userType: user.userType,
+      fullName: null,
+    },
+    tenant: null,
+    organisations: [],
+    orgMemberships: [],
+    access: {
+      kind,
+      tenantRole: null,
+      orgRole: null,
+      orgId: null,
+      allowedOrgIds: [],
+      permissions: {
+        readOnly: false,
+        canManageClientPortal: false,
+        canManageTenant: false,
+        canAssignConsultants: false,
+      },
+      canEnableClientPortal: false,
+    },
+  };
+}
 
 function companyFromProfile(profile: MeProfile): string {
   const clientOrg = isClientViewer(profile) ? profile.organisations[0] : undefined;
@@ -82,7 +112,7 @@ interface AuthState {
   authHydrated: boolean;
   hydrate: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  establishSessionFromLogin: (accessToken: string) => Promise<MeProfile>;
+  establishSessionFromLogin: (accessToken: string, fallbackProfile?: { id: string; email: string; userType: UserType }) => Promise<MeProfile>;
   establishSessionFromInvite: (accessToken: string, orgId: string) => Promise<void>;
   logout: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
@@ -114,8 +144,18 @@ function isUnauthorizedError(err: unknown): boolean {
 async function loadSessionFromToken(
   token: string,
   set: (partial: Partial<AuthState>) => void,
+  fallbackProfile?: { id: string; email: string; userType: UserType },
 ): Promise<void> {
-  const profile = await authApi.fetchMe(token);
+  let profile: MeProfile;
+  try {
+    profile = await authApi.fetchMe(token);
+  } catch (err) {
+    if (err instanceof ApiRequestError && err.status === 404 && fallbackProfile) {
+      profile = makeFallbackProfileFromLogin(fallbackProfile);
+    } else {
+      throw err;
+    }
+  }
   if (isConsultantWorkspace(profile)) {
     const { completed } = await authApi.fetchOnboardingStatus(token);
     applyProfile(profile, set);
@@ -215,13 +255,25 @@ export const useAuthStore = create<AuthState>((set) => ({
     await loadSessionFromToken(token, set);
   },
 
-  establishSessionFromLogin: async (accessToken) => {
+  establishSessionFromLogin: async (accessToken, fallbackProfile) => {
     clearWorkspaceSessionState();
     clearAppQueryCache();
     localStorage.setItem(TOKEN_KEY, accessToken);
-    const profile = await authApi.fetchMe(accessToken);
+
+    let profile: MeProfile;
+    try {
+      profile = await authApi.fetchMe(accessToken);
+    } catch (err) {
+      const fallback = fallbackProfile ?? null;
+      if (err instanceof ApiRequestError && err.status === 404 && fallback) {
+        profile = makeFallbackProfileFromLogin(fallback);
+      } else {
+        throw err;
+      }
+    }
+
     localStorage.setItem(USER_TYPE_KEY, getUserType(profile));
-    await loadSessionFromToken(accessToken, set);
+    await loadSessionFromToken(accessToken, set, fallbackProfile);
     // Ensure client binding runs after profile is applied (tenant-scoped).
     syncActiveClientWithAccess(profile);
     clearAppQueryCache();
