@@ -57,7 +57,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       const data = await authApi.login(values.email, values.password);
-      const profile = await establishSessionFromLogin(data.accessToken);
+      const profile = await establishSessionFromLogin(data.accessToken, data.user);
       await new Promise((resolve) => setTimeout(resolve, 700));
       const { onboardingComplete } = useAuthStore.getState();
       const path = resolvePostLoginPath(profile, onboardingComplete);

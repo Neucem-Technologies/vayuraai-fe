@@ -133,50 +133,74 @@ function clearAuthSession(set: (partial: Partial<AuthState>) => void): void {
 }
 
 function isUnauthorizedError(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'status' in err &&
-    (err as { status: number }).status === 401
-  );
+  return err instanceof ApiRequestError && err.status === 401;
+}
+
+function isNotFoundError(err: unknown): boolean {
+  return err instanceof ApiRequestError && err.status === 404;
+}
+
+type LoginUserFallback = { id: string; email: string; userType: UserType };
+
+function readStoredLoginFallback(): LoginUserFallback | undefined {
+  try {
+    const raw = localStorage.getItem('vayura_auth');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { user?: LoginUserFallback };
+    const user = parsed.user;
+    if (user?.id && user?.email && user?.userType) return user;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+async function resolveMeProfile(
+  token: string,
+  fallbackProfile?: LoginUserFallback,
+): Promise<MeProfile> {
+  try {
+    return await authApi.fetchMe(token);
+  } catch (err) {
+    if (isNotFoundError(err) && fallbackProfile) {
+      return makeFallbackProfileFromLogin(fallbackProfile);
+    }
+    throw err;
+  }
+}
+
+async function resolveOnboardingComplete(token: string, profile: MeProfile): Promise<boolean> {
+  if (!isConsultantWorkspace(profile)) {
+    return isClientViewer(profile);
+  }
+  try {
+    const { completed } = await authApi.fetchOnboardingStatus(token);
+    return completed;
+  } catch (err) {
+    // Older / mis-routed APIs 404 this GET for new users. Treat as "not done"
+    // so signup/login can continue into onboarding after a successful register.
+    if (isNotFoundError(err)) return false;
+    throw err;
+  }
 }
 
 async function loadSessionFromToken(
   token: string,
   set: (partial: Partial<AuthState>) => void,
-  fallbackProfile?: { id: string; email: string; userType: UserType },
-): Promise<void> {
-  let profile: MeProfile;
-  try {
-    profile = await authApi.fetchMe(token);
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.status === 404 && fallbackProfile) {
-      profile = makeFallbackProfileFromLogin(fallbackProfile);
-    } else {
-      throw err;
-    }
-  }
-  if (isConsultantWorkspace(profile)) {
-    const { completed } = await authApi.fetchOnboardingStatus(token);
-    applyProfile(profile, set);
-    set({ onboardingComplete: completed });
-    persistAuthSnapshot(
-      useAuthStore.getState().user!,
-      profile.tenant,
-      profile.access,
-      true,
-      completed,
-    );
-  } else {
-    applyProfile(profile, set);
-    persistAuthSnapshot(
-      useAuthStore.getState().user!,
-      profile.tenant,
-      profile.access,
-      true,
-      useAuthStore.getState().onboardingComplete,
-    );
-  }
+  fallbackProfile?: LoginUserFallback,
+): Promise<MeProfile> {
+  const profile = await resolveMeProfile(token, fallbackProfile);
+  const completed = await resolveOnboardingComplete(token, profile);
+  applyProfile(profile, set);
+  set({ onboardingComplete: completed });
+  persistAuthSnapshot(
+    useAuthStore.getState().user!,
+    profile.tenant,
+    profile.access,
+    true,
+    completed,
+  );
+  return profile;
 }
 
 function persistAuthSnapshot(
@@ -239,7 +263,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       return;
     }
     try {
-      await loadSessionFromToken(token, set);
+      await loadSessionFromToken(token, set, readStoredLoginFallback());
     } catch (err) {
       if (isUnauthorizedError(err)) {
         clearAuthSession(set);
@@ -252,29 +276,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   refreshSession: async () => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
-    await loadSessionFromToken(token, set);
+    await loadSessionFromToken(token, set, readStoredLoginFallback());
   },
 
   establishSessionFromLogin: async (accessToken, fallbackProfile) => {
     clearWorkspaceSessionState();
     clearAppQueryCache();
     localStorage.setItem(TOKEN_KEY, accessToken);
-
-    let profile: MeProfile;
-    try {
-      profile = await authApi.fetchMe(accessToken);
-    } catch (err) {
-      const fallback = fallbackProfile ?? null;
-      if (err instanceof ApiRequestError && err.status === 404 && fallback) {
-        profile = makeFallbackProfileFromLogin(fallback);
-      } else {
-        throw err;
-      }
-    }
-
+    const profile = await loadSessionFromToken(accessToken, set, fallbackProfile);
     localStorage.setItem(USER_TYPE_KEY, getUserType(profile));
-    await loadSessionFromToken(accessToken, set, fallbackProfile);
-    // Ensure client binding runs after profile is applied (tenant-scoped).
     syncActiveClientWithAccess(profile);
     clearAppQueryCache();
     return profile;
