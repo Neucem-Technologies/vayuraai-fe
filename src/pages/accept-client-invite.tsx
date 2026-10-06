@@ -40,7 +40,7 @@ export default function AcceptClientInvite() {
     setError(null);
     try {
       const result = await acceptClientInvite(token, values.password);
-      await establishSessionFromInvite(result.accessToken, result.orgId);
+      await establishSessionFromInvite(result.orgId);
       setLocation("/client/dashboard");
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Could not complete invite.");

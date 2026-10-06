@@ -21,7 +21,7 @@ export function activityRecordToEmission(row: ActivityRecordDto): EmissionRecord
     kgCO2e: row.kgCO2e,
     sourceDoc: row.sourceFilename,
     status: 'Approved',
-    approvedBy: row.approvedByUserId,
+    approvedBy: row.approvedByUserId ? 'Team member' : undefined,
     approvedAt: row.approvedAt,
   };
 }

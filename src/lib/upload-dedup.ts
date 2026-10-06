@@ -1,7 +1,7 @@
 import type { UploadStatus } from '@/lib/mock-data';
 
 /** Maps UI status to backend ingestion states that block duplicate filenames. */
-const BLOCKING_UI_STATUSES: UploadStatus[] = ['Processing', 'Needs Review'];
+const BLOCKING_UI_STATUSES: UploadStatus[] = ['Processing', 'Needs Review', 'Ready to Approve'];
 
 export function normalizeUploadFilename(filename: string): string {
   return filename.trim().toLowerCase();
@@ -51,7 +51,7 @@ export function findCompletedFilenameMatches(
 ): string[] {
   const completedNames = new Set(
     existingUploads
-      .filter((u) => u.status === 'Completed')
+      .filter((u) => u.status === 'Posted' || u.status === 'Ready to Approve')
       .map((u) => normalizeUploadFilename(u.filename)),
   );
 

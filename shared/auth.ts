@@ -8,8 +8,6 @@ export type PublicUser = {
 };
 
 export type AuthLoginResponse = {
-  accessToken: string;
-  tokenType: 'Bearer';
   user: PublicUser;
 };
 
@@ -46,7 +44,19 @@ export type OnboardingStatusResponse = { completed: boolean };
 /** POST /api/v1/auth/onboarding/firm */
 export type ProvisionFirmInput = {
   name: string;
-  plan?: 'starter' | 'growth' | 'enterprise';
+  plan?: 'starter' | 'growth' | 'professional' | 'enterprise';
+  country?: string;
+  entityType?: string;
+  teamSize?: string;
+  primaryService?: string;
+};
+
+export type ForgotPasswordResponse = { accepted: boolean; devResetUrl?: string };
+
+export type ResetPasswordResponse = { reset: boolean };
+
+export type AcceptTeamInviteResponse = {
+  accepted: true;
 };
 
 export type ProvisionFirmResponse = {
@@ -58,7 +68,5 @@ export type ProvisionFirmResponse = {
 export type LogoutResponse = { loggedOut: boolean };
 
 export type AcceptClientInviteResponse = {
-  accessToken: string;
-  tokenType: 'Bearer';
   orgId: string;
 };

@@ -1,5 +1,4 @@
 import { apiFetch } from '@/lib/api-client';
-import { TOKEN_KEY } from '@/hooks/use-auth';
 import type {
   BulkImportEmissionFactorsResponse,
   CreateCustomEmissionFactorInput,
@@ -12,10 +11,6 @@ import type {
 import type { EmissionFactor } from '@/lib/mock-data';
 
 export type { EmissionFactorDto, CreateCustomEmissionFactorInput };
-
-function token(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
 
 export function emissionFactorDtoToUi(dto: EmissionFactorDto): EmissionFactor {
   const validLabel =
@@ -41,7 +36,7 @@ export async function listEmissionFactors(
   const params = new URLSearchParams({ region, year: String(year) });
   const data = await apiFetch<EmissionFactorsListResponse>(
     `/api/v1/emission-factors?${params}`,
-    { accessToken: token() },
+    {},
   );
   return data.factors.map(emissionFactorDtoToUi);
 }
@@ -52,7 +47,6 @@ export async function createCustomEmissionFactor(
   const data = await apiFetch<EmissionFactorResponse>('/api/v1/emission-factors', {
     method: 'POST',
     body: JSON.stringify(input),
-    accessToken: token(),
   });
   return emissionFactorDtoToUi(data.factor);
 }
@@ -61,7 +55,6 @@ export async function syncEmissionFactors(): Promise<EmissionFactorSyncResponse>
   return apiFetch<EmissionFactorSyncResponse>('/api/v1/emission-factors/sync', {
     method: 'POST',
     body: JSON.stringify({}),
-    accessToken: token(),
   });
 }
 
@@ -73,7 +66,6 @@ export async function parseEmissionFactorsFile(
   return apiFetch<ParseEmissionFactorsFileResponse>('/api/v1/emission-factors/parse-file', {
     method: 'POST',
     body: form,
-    accessToken: token(),
   });
 }
 
@@ -83,6 +75,5 @@ export async function importCustomEmissionFactors(
   return apiFetch<BulkImportEmissionFactorsResponse>('/api/v1/emission-factors/import', {
     method: 'POST',
     body: JSON.stringify({ factors }),
-    accessToken: token(),
   });
 }

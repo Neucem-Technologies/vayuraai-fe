@@ -20,7 +20,7 @@ import { ApiRequestError } from '@/lib/api-client';
 
 export type { UserType, AccessProfile, MeProfile };
 
-export const TOKEN_KEY = 'vayura_access_token';
+const LEGACY_TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
 function makeFallbackProfileFromLogin(user: { id: string; email: string; userType: UserType }): MeProfile {
@@ -112,14 +112,14 @@ interface AuthState {
   authHydrated: boolean;
   hydrate: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  establishSessionFromLogin: (accessToken: string, fallbackProfile?: { id: string; email: string; userType: UserType }) => Promise<MeProfile>;
-  establishSessionFromInvite: (accessToken: string, orgId: string) => Promise<void>;
+  establishSessionFromLogin: (fallbackProfile?: { id: string; email: string; userType: UserType }) => Promise<MeProfile>;
+  establishSessionFromInvite: (orgId: string) => Promise<void>;
   logout: () => Promise<void>;
   completeOnboarding: () => Promise<void>;
 }
 
 function clearAuthSession(set: (partial: Partial<AuthState>) => void): void {
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
   localStorage.removeItem(USER_TYPE_KEY);
   localStorage.removeItem('vayura_auth');
   clearWorkspaceSessionState();
@@ -155,12 +155,9 @@ function readStoredLoginFallback(): LoginUserFallback | undefined {
   return undefined;
 }
 
-async function resolveMeProfile(
-  token: string,
-  fallbackProfile?: LoginUserFallback,
-): Promise<MeProfile> {
+async function resolveMeProfile(fallbackProfile?: LoginUserFallback): Promise<MeProfile> {
   try {
-    return await authApi.fetchMe(token);
+    return await authApi.fetchMe();
   } catch (err) {
     if (isNotFoundError(err) && fallbackProfile) {
       return makeFallbackProfileFromLogin(fallbackProfile);
@@ -169,12 +166,12 @@ async function resolveMeProfile(
   }
 }
 
-async function resolveOnboardingComplete(token: string, profile: MeProfile): Promise<boolean> {
+async function resolveOnboardingComplete(profile: MeProfile): Promise<boolean> {
   if (!isConsultantWorkspace(profile)) {
     return isClientViewer(profile);
   }
   try {
-    const { completed } = await authApi.fetchOnboardingStatus(token);
+    const { completed } = await authApi.fetchOnboardingStatus();
     return completed;
   } catch (err) {
     // Older / mis-routed APIs 404 this GET for new users. Treat as "not done"
@@ -184,13 +181,12 @@ async function resolveOnboardingComplete(token: string, profile: MeProfile): Pro
   }
 }
 
-async function loadSessionFromToken(
-  token: string,
+async function loadSession(
   set: (partial: Partial<AuthState>) => void,
   fallbackProfile?: LoginUserFallback,
 ): Promise<MeProfile> {
-  const profile = await resolveMeProfile(token, fallbackProfile);
-  const completed = await resolveOnboardingComplete(token, profile);
+  const profile = await resolveMeProfile(fallbackProfile);
+  const completed = await resolveOnboardingComplete(profile);
   applyProfile(profile, set);
   set({ onboardingComplete: completed });
   persistAuthSnapshot(
@@ -250,20 +246,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   authHydrated: false,
 
   hydrate: async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      set({
-        user: null,
-        tenant: null,
-        access: null,
-        isAuthenticated: false,
-        onboardingComplete: false,
-        authHydrated: true,
-      });
-      return;
-    }
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
     try {
-      await loadSessionFromToken(token, set, readStoredLoginFallback());
+      await loadSession(set, readStoredLoginFallback());
     } catch (err) {
       if (isUnauthorizedError(err)) {
         clearAuthSession(set);
@@ -274,27 +259,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   refreshSession: async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
-    await loadSessionFromToken(token, set, readStoredLoginFallback());
+    await loadSession(set, readStoredLoginFallback());
   },
 
-  establishSessionFromLogin: async (accessToken, fallbackProfile) => {
+  establishSessionFromLogin: async (fallbackProfile) => {
     clearWorkspaceSessionState();
     clearAppQueryCache();
-    localStorage.setItem(TOKEN_KEY, accessToken);
-    const profile = await loadSessionFromToken(accessToken, set, fallbackProfile);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    const profile = await loadSession(set, fallbackProfile);
     localStorage.setItem(USER_TYPE_KEY, getUserType(profile));
     syncActiveClientWithAccess(profile);
     clearAppQueryCache();
     return profile;
   },
 
-  establishSessionFromInvite: async (accessToken, orgId) => {
+  establishSessionFromInvite: async (orgId) => {
     clearWorkspaceSessionState();
-    localStorage.setItem(TOKEN_KEY, accessToken);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
     localStorage.setItem(USER_TYPE_KEY, 'sme');
-    const profile = await authApi.fetchMe(accessToken);
+    const profile = await authApi.fetchMe();
     applyProfile(profile, set);
     useActiveClientStore.getState().setActiveClient(orgId);
     if (profile.tenant?.id) {
@@ -305,9 +288,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
     try {
-      await authApi.logout(token);
+      await authApi.logout();
     } finally {
       clearAuthSession(set);
       set({ authHydrated: true });
@@ -315,9 +297,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   completeOnboarding: async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
-    await authApi.completeOnboarding(token);
+    await authApi.completeOnboarding();
     set((s) => {
       const next = { ...s, onboardingComplete: true };
       if (s.user && s.access) {

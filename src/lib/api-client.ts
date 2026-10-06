@@ -15,29 +15,23 @@ export class ApiRequestError extends Error {
   }
 }
 
-export async function apiFetch<T>(
-  path: string,
-  init?: RequestInit & { accessToken?: string | null },
-): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!baseUrl) {
     throw new Error('VITE_API_BASE_URL is not set. Copy .env.example to .env.local.');
   }
-  const { accessToken, ...rest } = init ?? {};
   const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-  const headers = new Headers(rest.headers);
+  const headers = new Headers(init?.headers);
   if (
     !headers.has('Content-Type') &&
-    rest.body !== undefined &&
-    !(rest.body instanceof FormData)
+    init?.body !== undefined &&
+    !(init.body instanceof FormData)
   ) {
     headers.set('Content-Type', 'application/json');
   }
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
-  }
   const res = await fetch(url, {
-    ...rest,
+    ...init,
     headers,
+    credentials: 'include',
     cache: 'no-store',
   });
   const json: unknown = await res.json().catch(() => null);

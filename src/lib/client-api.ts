@@ -1,31 +1,26 @@
 import { apiFetch } from '@/lib/api-client';
 import type { AcceptClientInviteResponse } from '@vayura/api-contracts/auth';
-import type { ClientDashboard, ClientReportsResponse } from '@vayura/api-contracts/client';
-
-const ACCESS_TOKEN_KEY = 'vayura_access_token';
-
-function token(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
-}
+import type { ClientDashboard, ClientDashboardPeriod, ClientReportsResponse } from '@vayura/api-contracts/client';
 
 export type { ClientDashboard };
 export type ClientReportRow = ClientReportsResponse['reports'][number];
 
-export async function fetchClientDashboard(): Promise<ClientDashboard> {
-  const accessToken = token();
-  if (!accessToken) throw new Error('Not authenticated');
-  return apiFetch<ClientDashboard>('/api/v1/client/dashboard', {
+export async function fetchClientDashboard(query?: {
+  period?: ClientDashboardPeriod;
+  year?: number;
+}): Promise<ClientDashboard> {
+  const params = new URLSearchParams();
+  if (query?.period) params.set('period', query.period);
+  if (query?.year) params.set('year', String(query.year));
+  const qs = params.toString();
+  return apiFetch<ClientDashboard>(`/api/v1/client/dashboard${qs ? `?${qs}` : ''}`, {
     method: 'GET',
-    accessToken,
   });
 }
 
 export async function fetchClientReports(): Promise<ClientReportRow[]> {
-  const accessToken = token();
-  if (!accessToken) throw new Error('Not authenticated');
   const data = await apiFetch<ClientReportsResponse>('/api/v1/client/reports', {
     method: 'GET',
-    accessToken,
   });
   return data.reports;
 }

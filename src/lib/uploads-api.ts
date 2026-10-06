@@ -1,5 +1,4 @@
 import { apiFetch } from '@/lib/api-client';
-import { TOKEN_KEY } from '@/hooks/use-auth';
 import type {
   ActivityRecordDto,
   ActivityRecordsListResponse,
@@ -27,13 +26,8 @@ export type {
   ActivityRecordDto,
 };
 
-function token(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
 export async function listUploads(orgId: string): Promise<UploadDto[]> {
   const data = await apiFetch<UploadsListResponse>(`/api/v1/organisations/${orgId}/uploads`, {
-    accessToken: token(),
   });
   return data.uploads;
 }
@@ -41,7 +35,7 @@ export async function listUploads(orgId: string): Promise<UploadDto[]> {
 export async function getUploadDetail(orgId: string, uploadId: string): Promise<UploadDetailResponse> {
   return apiFetch<UploadDetailResponse>(
     `/api/v1/organisations/${orgId}/uploads/${uploadId}`,
-    { accessToken: token() },
+    {},
   );
 }
 
@@ -68,7 +62,6 @@ export async function uploadDocuments(
   const data = await apiFetch<UploadCreateResponse>(`/api/v1/organisations/${orgId}/uploads`, {
     method: 'POST',
     body: form,
-    accessToken: token(),
   });
   return data.uploads;
 }
@@ -83,7 +76,6 @@ export async function saveUploadReview(
     {
       method: 'PUT',
       body: JSON.stringify(body),
-      accessToken: token(),
     },
   );
 }
@@ -98,7 +90,6 @@ export async function approveUpload(
     {
       method: 'POST',
       body: JSON.stringify(body),
-      accessToken: token(),
     },
   );
 }
@@ -113,7 +104,6 @@ export async function rejectUpload(
     {
       method: 'POST',
       body: JSON.stringify(body),
-      accessToken: token(),
     },
   );
 }
@@ -121,7 +111,7 @@ export async function rejectUpload(
 export async function listActivityRecords(orgId: string): Promise<ActivityRecordDto[]> {
   const data = await apiFetch<ActivityRecordsListResponse>(
     `/api/v1/organisations/${orgId}/activity-records`,
-    { accessToken: token() },
+    {},
   );
   return data.records;
 }
@@ -141,14 +131,11 @@ export async function fetchUploadContent(
 ): Promise<UploadContent> {
   const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
   if (!baseUrl) throw new Error('VITE_API_BASE_URL is not set.');
-  const accessToken = token();
-  if (!accessToken) throw new Error('Not authenticated');
-
   const qs = options?.download ? '?download=1' : '';
   const res = await fetch(
     `${baseUrl}/api/v1/organisations/${orgId}/uploads/${uploadId}/content${qs}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: 'include',
       cache: 'no-store',
     },
   );

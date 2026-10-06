@@ -1,4 +1,4 @@
-import { MOCK_FACTORS, type EmissionFactor } from '@/lib/mock-data';
+import type { EmissionFactor } from '@/lib/mock-data';
 
 type LineForFactor = {
   description: string;
@@ -44,19 +44,6 @@ function scoreFactor(factor: EmissionFactor, line: LineForFactor): number {
   if (factorUnit === 'inr' && lineUnit === 'inr') score += 6;
 
   return score;
-}
-
-export function suggestFactorId(line: LineForFactor): string {
-  let best = MOCK_FACTORS[0];
-  let bestScore = -1;
-  for (const factor of MOCK_FACTORS) {
-    const score = scoreFactor(factor, line);
-    if (score > bestScore) {
-      bestScore = score;
-      best = factor;
-    }
-  }
-  return best.id;
 }
 
 /** Sort factors with best matches first for review dropdowns. */
