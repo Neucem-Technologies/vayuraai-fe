@@ -1,18 +1,12 @@
 import { useState } from "react";
-import {
-  UserPlus,
-  MoreHorizontal,
-  Check,
-  X,
-  Mail,
-} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Mail, MoreHorizontal, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/status-badge";
 import {
   Table,
   TableBody,
@@ -42,253 +36,287 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useUsers, useSmeUsers } from "@/hooks/use-data";
-import { useAuthStore, useTenant } from "@/hooks/use-auth";
-import { useActiveClient } from "@/hooks/use-active-client";
-import {
-  MOCK_ROLE_PERMISSIONS,
-  MOCK_SME_ROLE_PERMISSIONS,
-  type ConsultantRole,
-  type SmeRole,
-} from "@/lib/mock-data";
-import { cn } from "@/lib/utils";
+import { useAuthStore, useIsConsultantAdmin, useTenant } from "@/hooks/use-auth";
+import { inviteTeamMember, listTeamMembers, removeTeamMember, updateTeamMemberRole } from "@/lib/team-api";
+import { ApiRequestError } from "@/lib/api-client";
+import { toast } from "sonner";
+import type { TenantRole } from "@vayura/api-contracts/common";
 
-type AccessRole = ConsultantRole | SmeRole;
-
-const CONSULTANT_ROLES: ConsultantRole[] = ["Partner", "Manager", "Consultant", "Analyst"];
-const SME_ROLES: SmeRole[] = ["Owner", "Approver", "Contributor", "Viewer"];
-
-const CONSULTANT_ROLE_DESCRIPTIONS: Record<ConsultantRole, string> = {
-  Partner: "Owner-level access. Manage firm settings, billing, all clients, and submit reports.",
-  Manager: "Lead engagements end-to-end. Add clients, approve emissions, and manage the team.",
-  Consultant: "Day-to-day delivery. Upload data, edit records, and approve emissions for assigned clients.",
-  Analyst: "Hands-on data work. Upload, extract, and prepare records — approvals require a Consultant or above.",
+const ROLE_LABEL: Record<TenantRole, string> = {
+  consultant_admin: "Administrator",
+  consultant_member: "Member",
 };
 
-const SME_ROLE_DESCRIPTIONS: Record<SmeRole, string> = {
-  Owner: "Full organization access. Manage users, reporting boundary, approvals, and submission evidence.",
-  Approver: "Can review data, approve emissions records, and generate reports for internal sign-off.",
-  Contributor: "Can upload evidence and edit extracted activity data before approval.",
-  Viewer: "Read-only access to dashboards, emissions, uploads, and reports.",
-};
+function formatWhen(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function initials(name: string | null, email: string): string {
+  const source = name?.trim() || email;
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]![0]}${parts[1]![0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
 
 export default function SettingsUsers() {
-  const { user } = useAuthStore();
   const tenant = useTenant();
-  const activeClient = useActiveClient();
-  const isSme = user?.userType === "sme";
-  const { data: consultantUsers, isLoading: consultantsLoading } = useUsers();
-  const { data: smeUsers, isLoading: smeUsersLoading } = useSmeUsers();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = useIsConsultantAdmin();
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [inviteRole, setInviteRole] = useState<AccessRole>("Consultant");
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [role, setRole] = useState<TenantRole>("consultant_member");
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
 
-  const roles = (isSme ? SME_ROLES : CONSULTANT_ROLES) as AccessRole[];
-  const users = isSme ? smeUsers : consultantUsers;
-  const isLoading = isSme ? smeUsersLoading : consultantsLoading;
-  const permissions = isSme ? MOCK_SME_ROLE_PERMISSIONS : MOCK_ROLE_PERMISSIONS;
-  const selectedInviteRole = roles.includes(inviteRole) ? inviteRole : roles[0];
+  const members = useQuery({
+    queryKey: ["team-members", tenant?.id],
+    queryFn: listTeamMembers,
+    enabled: !!tenant,
+  });
 
-  const describeRole = (role: AccessRole) =>
-    isSme
-      ? SME_ROLE_DESCRIPTIONS[role as SmeRole]
-      : CONSULTANT_ROLE_DESCRIPTIONS[role as ConsultantRole];
+  const invite = useMutation({
+    mutationFn: () => inviteTeamMember({ email, fullName, role }),
+    onSuccess: (data) => {
+      const link = `${window.location.origin}${import.meta.env.BASE_URL ?? "/"}accept-team-invite?token=${encodeURIComponent(data.inviteToken)}`.replace(
+        /([^:]\/)\/+/g,
+        "$1",
+      );
+      setInviteLink(data.emailSent ? null : link);
+      setEmail("");
+      setFullName("");
+      void queryClient.invalidateQueries({ queryKey: ["team-members"] });
+      toast.success(data.emailSent ? "Invite emailed" : "Invite created", {
+        description: data.emailSent
+          ? "They will receive a link to set a password."
+          : "Email is not configured. Share the invite link below.",
+      });
+      if (data.emailSent) setOpen(false);
+    },
+    onError: (e) => {
+      toast.error("Invite failed", {
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    },
+  });
+
+  const changeRole = useMutation({
+    mutationFn: ({ userId, next }: { userId: string; next: TenantRole }) =>
+      updateTeamMemberRole(userId, next),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["team-members"] });
+    },
+    onError: (e) => {
+      toast.error("Could not change role", {
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: removeTeamMember,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["team-members"] });
+      toast.success("Removed from the firm");
+    },
+    onError: (e) => {
+      toast.error("Could not remove member", {
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    },
+  });
 
   return (
     <>
       <PageHeader
-        title={isSme ? "Users & access" : "Firm team"}
-        subtitle={
-          isSme
-            ? `People at ${activeClient?.name ?? user?.company ?? "your organization"}. Assign roles, manage access, and control who can upload, approve, and report.`
-            : `Consultants at ${tenant?.name ?? user?.company ?? "your firm"}. Assign roles, manage access, and review what each role can do across every client.`
-        }
+        title="Firm team"
+        subtitle={`Consultants at ${tenant?.name ?? "your firm"}. Roles and client assignments come from the workspace.`}
         actions={
-          <Button onClick={() => setOpen(true)} data-testid="button-invite-user">
-            <UserPlus className="w-4 h-4 mr-2" />
-            {isSme ? "Invite user" : "Invite consultant"}
-          </Button>
+          isAdmin ? (
+            <Button onClick={() => setOpen(true)} data-testid="button-invite-user">
+              <UserPlus className="w-4 h-4 mr-2" />
+              Invite consultant
+            </Button>
+          ) : null
         }
       />
 
-      <Tabs defaultValue="members" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="members" data-testid="tab-members">Team members</TabsTrigger>
-          <TabsTrigger value="roles" data-testid="tab-roles">Roles & permissions</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="members">
-          <Card>
-            <CardContent className="p-4">
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{isSme ? "User" : "Consultant"}</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>{isSme ? "Function" : "Clients assigned"}</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Last active</TableHead>
-                      <TableHead className="w-[60px]" />
+      <Card>
+        <CardContent className="p-4">
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Consultant</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Clients assigned</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last sign-in</TableHead>
+                  <TableHead className="w-[60px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.isLoading &&
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={6}>
+                        <Skeleton className="h-6 w-full" />
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isLoading && Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
-                      </TableRow>
-                    ))}
-                    {!isLoading && users?.map((u) => (
-                      <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-medium shrink-0">
-                              {u.avatar}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-foreground">{u.name}</div>
-                              <div className="text-xs text-muted-foreground">{u.email}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Select defaultValue={u.role}>
-                            <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {roles.map((r) => (
-                                <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="text-sm tabular-nums">
-                          {"clientsAssigned" in u ? (
-                            u.clientsAssigned > 0 ? (
-                              <span className="font-medium">{u.clientsAssigned}</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )
-                          ) : (
-                            <span>{u.function}</span>
-                          )}
-                        </TableCell>
-                        <TableCell><StatusBadge status={u.status} /></TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{u.lastActive}</TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`menu-user-${u.id}`}>
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem>{isSme ? "Manage access" : "Manage client assignments"}</DropdownMenuItem>
-                              {u.status === "Invited" && <DropdownMenuItem><Mail className="w-4 h-4 mr-2" /> Resend invite</DropdownMenuItem>}
-                              <DropdownMenuItem>Reset password</DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive">
-                                {isSme ? "Remove from organization" : "Remove from firm"}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="roles">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-4">
-            {roles.map((role) => (
-              <Card key={role}>
-                <CardContent className="p-4">
-                  <div className="text-base font-semibold text-foreground">{role}</div>
-                  <p className="text-xs text-muted-foreground mt-1 leading-snug">{describeRole(role)}</p>
-                  <div className="mt-3 text-xs text-muted-foreground">
-                    {users?.filter((u) => u.role === role).length ?? 0} active members
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  ))}
+                {!members.isLoading && members.data?.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                      No team members yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {members.data?.map((member) => (
+                  <TableRow key={member.id} data-testid={`row-user-${member.id}`}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-medium shrink-0">
+                          {initials(member.fullName, member.email)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{member.fullName ?? member.email}</div>
+                          <div className="text-xs text-muted-foreground">{member.email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {isAdmin && member.status === "active" ? (
+                        <Select
+                          value={member.role}
+                          onValueChange={(next) =>
+                            changeRole.mutate({ userId: member.id, next: next as TenantRole })
+                          }
+                        >
+                          <SelectTrigger className="h-8 w-40 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="consultant_admin">Administrator</SelectItem>
+                            <SelectItem value="consultant_member">Member</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-sm">{ROLE_LABEL[member.role]}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums">
+                      {member.clientsAssigned === null ? "—" : member.clientsAssigned}
+                    </TableCell>
+                    <TableCell className="text-sm capitalize">{member.status}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {member.status === "invited" ? "Invite pending" : formatWhen(member.lastActiveAt)}
+                    </TableCell>
+                    <TableCell>
+                      {isAdmin && member.id !== user?.id && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => remove.mutate(member.id)}
+                            >
+                              {member.status === "invited" ? "Cancel invite" : "Remove from firm"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
+        </CardContent>
+      </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Permission matrix</CardTitle>
-              <CardDescription>What each role can and cannot do across Vayura</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[40%]">Permission</TableHead>
-                      {roles.map((r) => (
-                        <TableHead key={r} className="text-center">{r}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {permissions.map((p) => (
-                      <TableRow key={p.permission}>
-                        <TableCell className="text-sm">{p.permission}</TableCell>
-                        {roles.map((role) => (
-                          <TableCell key={role} className="text-center">
-                            <span className={cn(
-                              "inline-flex items-center justify-center w-6 h-6 rounded-full",
-                              p[role as keyof typeof p] ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground/40",
-                            )}>
-                              {p[role as keyof typeof p] ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                            </span>
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="text-base">Roles</CardTitle>
+          <CardDescription>What each firm role can do. Client viewers are managed per organisation.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <div className="font-medium">Administrator</div>
+            <p className="text-muted-foreground mt-1">
+              Firm profile, plan, branding, team, every client, and client-portal invites.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium">Member</div>
+            <p className="text-muted-foreground mt-1">
+              Uploads, review, and reports for the client organisations they are assigned to.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{isSme ? "Invite an organization user" : "Invite a consultant"}</DialogTitle>
+            <DialogTitle>Invite a consultant</DialogTitle>
             <DialogDescription>
-              They'll get an email to join {isSme ? activeClient?.name ?? user?.company ?? "your organization" : tenant?.name ?? user?.company ?? "your firm"}.
+              They get a one-time link, valid for 48 hours, to set a password and join {tenant?.name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-3">
             <div>
-              <Label className="text-sm">Email address</Label>
+              <Label>Full name</Label>
+              <Input className="mt-1" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            </div>
+            <div>
+              <Label>Email</Label>
               <Input
                 className="mt-1"
-                placeholder={isSme ? "user@company.com" : "consultant@greenedge.in"}
-                data-testid="input-invite-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="consultant@firm.com"
               />
             </div>
             <div>
-              <Label className="text-sm">Role</Label>
-              <Select value={selectedInviteRole} onValueChange={(v) => setInviteRole(v as AccessRole)}>
-                <SelectTrigger className="mt-1" data-testid="select-invite-role"><SelectValue /></SelectTrigger>
+              <Label>Role</Label>
+              <Select value={role} onValueChange={(value) => setRole(value as TenantRole)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  {roles.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
+                  <SelectItem value="consultant_member">Member</SelectItem>
+                  <SelectItem value="consultant_admin">Administrator</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground mt-2">{describeRole(selectedInviteRole)}</p>
             </div>
+            {inviteLink && (
+              <p className="text-xs text-muted-foreground break-all">
+                <Mail className="w-3 h-3 inline mr-1" />
+                {inviteLink}
+              </p>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => setOpen(false)} data-testid="button-send-invite">
-              <Mail className="w-4 h-4 mr-2" /> Send invite
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+            <Button
+              disabled={!email || fullName.trim().length < 2 || invite.isPending}
+              onClick={() => invite.mutate()}
+            >
+              {invite.isPending ? "Sending…" : "Send invite"}
             </Button>
           </DialogFooter>
         </DialogContent>

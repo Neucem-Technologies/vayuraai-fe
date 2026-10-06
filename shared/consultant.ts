@@ -12,6 +12,7 @@ export type ClientViewersListResponse = { viewers: ClientViewerSummary[] };
 export type InviteClientViewerResponse = {
   inviteToken: string;
   expiresAt: string;
+  emailSent: boolean;
 };
 
 export type RevokeClientViewerResponse = { revoked: boolean };

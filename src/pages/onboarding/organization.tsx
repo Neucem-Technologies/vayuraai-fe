@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TOKEN_KEY, useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore } from "@/hooks/use-auth";
 import { provisionFirm } from "@/lib/auth-api";
 import { ApiRequestError } from "@/lib/api-client";
 import { toast } from "@/hooks/use-toast";
@@ -41,7 +41,7 @@ type FormVals = z.infer<typeof schema>;
 
 const PLAN_TO_API: Record<FormVals["plan"], TenantPlan> = {
   Starter: "starter",
-  Pro: "growth",
+  Pro: "professional",
   Enterprise: "enterprise",
 };
 
@@ -63,8 +63,7 @@ export default function OnboardingOrganization() {
   });
 
   const onSubmit = async (values: FormVals) => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
+    if (!useAuthStore.getState().isAuthenticated) {
       toast({
         title: "Sign in required",
         description: "Please sign in again to set up your firm.",
@@ -76,9 +75,13 @@ export default function OnboardingOrganization() {
 
     setIsSubmitting(true);
     try {
-      await provisionFirm(token, {
+      await provisionFirm({
         name: values.firmName,
         plan: PLAN_TO_API[values.plan],
+        country: values.country,
+        entityType: values.entityType,
+        teamSize: values.teamSize,
+        primaryService: values.primaryService,
       });
       await refreshSession();
       setLocation("/onboarding/industry");
@@ -208,9 +211,9 @@ export default function OnboardingOrganization() {
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger data-testid="select-plan"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Starter">Starter — up to 5 clients</SelectItem>
-                        <SelectItem value="Pro">Pro — up to 25 clients</SelectItem>
-                        <SelectItem value="Enterprise">Enterprise — unlimited</SelectItem>
+                        <SelectItem value="Starter">Starter</SelectItem>
+                        <SelectItem value="Pro">Professional — client portal</SelectItem>
+                        <SelectItem value="Enterprise">Enterprise — client portal</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormControl>

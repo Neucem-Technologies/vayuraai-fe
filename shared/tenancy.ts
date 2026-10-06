@@ -73,11 +73,52 @@ export type TenantDto = {
   name: string;
   plan: TenantPlan;
   role: TenantRole;
+  displayName: string;
+  country: string;
+  website: string | null;
+  registeredAddress: string;
+  billingEmail: string | null;
+  gstin: string | null;
+  entityType: string | null;
+  teamSize: string | null;
+  primaryService: string | null;
   whiteLabelEnabled: boolean;
   brandColorHex: string;
   reportFooterDisclaimer: string;
   reportLogoPlacement: ReportLogoPlacement;
   hasReportLogo: boolean;
+};
+
+export type TeamMemberDto = {
+  id: string;
+  email: string;
+  fullName: string | null;
+  role: TenantRole;
+  status: 'active' | 'invited';
+  clientsAssigned: number | null;
+  lastActiveAt: string | null;
+};
+
+export type TeamMembersResponse = { members: TeamMemberDto[] };
+
+export type InviteTeamMemberResponse = {
+  inviteToken: string;
+  expiresAt: string;
+  emailSent: boolean;
+};
+
+export type UpdateTenantProfileInput = {
+  name?: string;
+  displayName?: string;
+  country?: string;
+  website?: string | null;
+  registeredAddress?: string;
+  billingEmail?: string | null;
+  gstin?: string | null;
+  entityType?: string | null;
+  teamSize?: string | null;
+  primaryService?: string | null;
+  plan?: TenantPlan;
 };
 
 export type UpdateTenantBrandingInput = {
