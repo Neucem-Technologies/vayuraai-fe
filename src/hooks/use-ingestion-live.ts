@@ -14,6 +14,7 @@ type IngestionLiveStore = {
   setWsConnected: (connected: boolean) => void;
   patchUpload: (uploadId: string, patch: Partial<UploadLiveState>) => void;
   clearUpload: (uploadId: string) => void;
+  clearAllUploads: () => void;
 };
 
 export const useIngestionLiveStore = create<IngestionLiveStore>((set) => ({
@@ -36,4 +37,5 @@ export const useIngestionLiveStore = create<IngestionLiveStore>((set) => ({
       delete next[uploadId];
       return { byUpload: next };
     }),
+  clearAllUploads: () => set({ byUpload: {} }),
 }));

@@ -2,12 +2,12 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { IngestionPipelineEvent } from '@vayura/api-contracts/ingestion-events';
-import { TOKEN_KEY } from '@/hooks/use-auth';
 import { useActiveClientStore } from '@/hooks/use-active-client';
 import { useAuthStore } from '@/hooks/use-auth';
 import { getIngestionWebSocketUrl } from '@/lib/ingestion-ws';
 import { useIngestionLiveStore } from '@/hooks/use-ingestion-live';
 import { friendlyIngestionError } from '@/lib/ingestion-errors';
+import { invalidateOrgWorkspace } from '@/lib/query-invalidation';
 
 const RECONNECT_MS = 3000;
 
@@ -59,7 +59,7 @@ function applyEvent(
       break;
   }
 
-  void queryClient.invalidateQueries({ queryKey: ['uploads', orgId] });
+  invalidateOrgWorkspace(queryClient, orgId);
   void queryClient.invalidateQueries({ queryKey: ['uploadDetail', orgId, uploadId] });
   void queryClient.invalidateQueries({ queryKey: ['upload', orgId, uploadId] });
 }
@@ -80,8 +80,7 @@ export function useIngestionEvents(): void {
       return;
     }
 
-    const token = localStorage.getItem(TOKEN_KEY);
-    const url = token ? getIngestionWebSocketUrl(orgId, token) : null;
+    const url = getIngestionWebSocketUrl(orgId);
     if (!url) return;
 
     let cancelled = false;

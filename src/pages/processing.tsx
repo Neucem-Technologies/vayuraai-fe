@@ -10,6 +10,7 @@ import {
   Sparkles,
   Save,
   Send,
+  XCircle,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -53,9 +54,11 @@ import { uploadDtoToDoc } from "@/lib/upload-mapper";
 import {
   approveUpload,
   fetchUploadContent,
+  rejectUpload,
   saveUploadReview,
   type ReviewLineInput,
 } from "@/lib/uploads-api";
+import { invalidateOrgWorkspace, invalidateUploadDetail } from "@/lib/query-invalidation";
 import { cn } from "@/lib/utils";
 import { friendlyIngestionError } from "@/lib/ingestion-errors";
 import { formatEmissionMass } from "@/lib/format-emissions";
@@ -181,6 +184,8 @@ export default function Processing() {
   const [items, setItems] = useState<ReviewLineItem[]>([]);
   const [page, setPage] = useState(1);
   const [dirty, setDirty] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const facilityOptions = useMemo(() => {
     const names = new Set<string>([ORGANISATION_WIDE_FACILITY]);
@@ -222,7 +227,7 @@ export default function Processing() {
     },
     onSuccess: () => {
       setDirty(false);
-      void queryClient.invalidateQueries({ queryKey: ["uploadDetail", orgId, params.id] });
+      invalidateUploadDetail(queryClient, orgId, params.id);
       toast.success("Review saved", {
         description: "Your edits are saved. Approve when you are ready to post to the ledger.",
       });
@@ -239,12 +244,8 @@ export default function Processing() {
     },
     onSuccess: (data) => {
       setDirty(false);
-      void queryClient.invalidateQueries({ queryKey: ["uploadDetail", orgId, params.id] });
-      void queryClient.invalidateQueries({ queryKey: ["uploads", orgId] });
-      void queryClient.invalidateQueries({ queryKey: ["emissions", orgId] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
-      void queryClient.invalidateQueries({ queryKey: ["clients"] });
-      if (orgId) void queryClient.invalidateQueries({ queryKey: ["client", orgId] });
+      invalidateOrgWorkspace(queryClient, orgId);
+      invalidateUploadDetail(queryClient, orgId, params.id);
       toast.success("Approved and posted", {
         description: (() => {
           const f = formatEmissionMass(data.totalKgCO2e);
@@ -255,6 +256,28 @@ export default function Processing() {
     },
     onError: (error: Error) => {
       toast.error("Could not approve upload", { description: error.message });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => {
+      if (!orgId || !params.id) throw new Error("Missing upload context");
+      const reason = rejectReason.trim();
+      if (reason.length < 3) throw new Error("Add a short reason (at least 3 characters).");
+      return rejectUpload(orgId, params.id, { reason });
+    },
+    onSuccess: () => {
+      setRejectOpen(false);
+      setRejectReason("");
+      invalidateOrgWorkspace(queryClient, orgId);
+      invalidateUploadDetail(queryClient, orgId, params.id);
+      toast.success("Upload rejected", {
+        description: "This document will not post to the emissions ledger.",
+      });
+      setLocation("/uploads");
+    },
+    onError: (error: Error) => {
+      toast.error("Could not reject upload", { description: error.message });
     },
   });
 
@@ -652,14 +675,23 @@ export default function Processing() {
             <>
               <Button
                 variant="outline"
-                disabled={saveReviewMutation.isPending || approveMutation.isPending}
+                disabled={saveReviewMutation.isPending || approveMutation.isPending || rejectMutation.isPending}
                 onClick={() => saveReviewMutation.mutate()}
               >
                 <Save className="w-4 h-4 mr-2" />
                 {saveReviewMutation.isPending ? "Saving…" : dirty ? "Save review" : "Save review"}
               </Button>
               <Button
-                disabled={approveMutation.isPending || saveReviewMutation.isPending || items.some((i) => !i.factorId)}
+                variant="outline"
+                className="text-destructive hover:text-destructive"
+                disabled={approveMutation.isPending || saveReviewMutation.isPending || rejectMutation.isPending}
+                onClick={() => setRejectOpen(true)}
+              >
+                <XCircle className="w-4 h-4 mr-2" />
+                Reject
+              </Button>
+              <Button
+                disabled={approveMutation.isPending || saveReviewMutation.isPending || rejectMutation.isPending || items.some((i) => !i.factorId)}
                 onClick={() => approveMutation.mutate()}
               >
                 <Send className="w-4 h-4 mr-2" />
@@ -674,6 +706,35 @@ export default function Processing() {
           )}
         </div>
       </div>
+
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject this upload?</DialogTitle>
+            <DialogDescription>
+              The document will stay on record as failed and will not post to the emissions ledger.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            className="min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            placeholder="Reason for rejection"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={rejectMutation.isPending || rejectReason.trim().length < 3}
+              onClick={() => rejectMutation.mutate()}
+            >
+              {rejectMutation.isPending ? "Rejecting…" : "Confirm reject"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {orgId && (
         <AddFacilityDialog
