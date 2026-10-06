@@ -14,7 +14,9 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import ForgotPassword from "@/pages/forgot-password";
+import ResetPassword from "@/pages/reset-password";
 import AcceptClientInvite from "@/pages/accept-client-invite";
+import AcceptTeamInvite from "@/pages/accept-team-invite";
 
 import OnboardingOrganization from "@/pages/onboarding/organization";
 import OnboardingIndustry from "@/pages/onboarding/industry";
@@ -145,7 +147,9 @@ function Router() {
       <Route path="/signup" component={Signup} />
       <Route path="/register" component={Signup} />
       <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route path="/accept-client-invite" component={AcceptClientInvite} />
+      <Route path="/accept-team-invite" component={AcceptTeamInvite} />
 
       <Route path="/onboarding/organization" component={() => <OnboardingRoute component={OnboardingOrganization} />} />
       <Route path="/onboarding/industry" component={() => <OnboardingRoute component={OnboardingIndustry} />} />

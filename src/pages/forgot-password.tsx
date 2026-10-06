@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { requestPasswordReset } from "@/lib/auth-api";
+import { ApiRequestError } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const formSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -23,6 +26,7 @@ const formSchema = z.object({
 export default function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -31,11 +35,19 @@ export default function ForgotPassword() {
     },
   });
 
-  async function onSubmit() {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    setIsLoading(false);
-    setIsSuccess(true);
+    try {
+      const result = await requestPasswordReset(values.email);
+      setDevResetUrl(result.devResetUrl ?? null);
+      setIsSuccess(true);
+    } catch (e) {
+      toast.error("Could not send reset link", {
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -59,7 +71,12 @@ export default function ForgotPassword() {
               <div className="space-y-6">
                 <Alert className="bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
                   <AlertDescription className="text-green-800 dark:text-green-300">
-                    We've sent a password reset link to <strong>{form.getValues().email}</strong>. Please check your inbox.
+                    If an account exists for <strong>{form.getValues().email}</strong>, a reset link is on its way.
+                    {devResetUrl && (
+                      <span className="block mt-2 break-all">
+                        Email is not configured in this environment. Use this link: {devResetUrl}
+                      </span>
+                    )}
                   </AlertDescription>
                 </Alert>
                 <Link href="/login">
