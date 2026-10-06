@@ -166,6 +166,7 @@ export default function Reports() {
       });
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      await queryClient.invalidateQueries({ queryKey: ["portfolioStats"] });
       setOpen(false);
       toast.success("Report generation started", {
         description: `${report.name} will appear as Ready when the PDF finishes.`,
@@ -185,6 +186,8 @@ export default function Reports() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
+      await queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
+      await queryClient.invalidateQueries({ queryKey: ["portfolioStats"] });
       toast.success("Report marked as submitted");
     },
     onError: (e) => {

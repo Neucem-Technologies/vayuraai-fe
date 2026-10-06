@@ -52,6 +52,23 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
     },
   });
 
+  const branding = useMutation({
+    mutationFn: (showConsultantBranding: boolean) =>
+      updateOrganisation(org.id, { showConsultantBranding }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["clients"] });
+      await queryClient.invalidateQueries({ queryKey: ["client", org.id] });
+      await queryClient.invalidateQueries({ queryKey: ["organisation", org.id] });
+    },
+    onError: (e) => {
+      toast({
+        variant: "destructive",
+        title: "Could not update branding",
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    },
+  });
+
   const invite = useMutation({
     mutationFn: () => inviteClientViewer(org.id, email, fullName),
     onSuccess: (data) => {
@@ -61,7 +78,13 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
       setEmail("");
       setFullName("");
       queryClient.invalidateQueries({ queryKey: ["client-viewers", org.id] });
-      toast({ title: "Invite created", description: "Share the invite link with your client (email delivery coming soon)." });
+      toast({
+        title: data.emailSent ? "Invite emailed" : "Invite created",
+        description: data.emailSent
+          ? "The client will receive a one-time link to set a password."
+          : "Email is not configured. Share the invite link below.",
+      });
+      if (data.emailSent) setLastInviteLink(null);
     },
     onError: (e) => {
       toast({
@@ -93,7 +116,7 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
       <CardContent className="space-y-4">
         {!canEnablePortal ? (
           <p className="text-sm text-muted-foreground">
-            Upgrade to Growth or Enterprise to enable the client viewer portal for this organisation.
+            Upgrade to Growth, Professional, or Enterprise to enable the client viewer portal for this organisation.
           </p>
         ) : (
           <>
@@ -106,6 +129,17 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
                 checked={org.clientViewerEnabled}
                 onCheckedChange={(v) => togglePortal.mutate(v)}
                 disabled={togglePortal.isPending}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <Label htmlFor="show-branding" className="text-sm">
+                Show your firm name on the client dashboard
+              </Label>
+              <Switch
+                id="show-branding"
+                checked={org.showConsultantBranding}
+                onCheckedChange={(v) => branding.mutate(v)}
+                disabled={branding.isPending}
               />
             </div>
             {org.clientViewerEnabled && (

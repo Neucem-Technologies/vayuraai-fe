@@ -22,6 +22,8 @@ export default function ClientReports() {
     queryKey: ["client-reports", orgId],
     queryFn: fetchClientReports,
     enabled: !!orgId,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
 
   const onDownload = async (id: string, name: string) => {

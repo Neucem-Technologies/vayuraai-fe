@@ -34,6 +34,6 @@ export type CreateReportRequest = {
 export type CreateReportResponse = { report: ReportDto };
 
 export type ReportDownloadResponse = {
-  contentType: string;
-  filename: string;
+  url: string;
+  expiresAt: string;
 };
