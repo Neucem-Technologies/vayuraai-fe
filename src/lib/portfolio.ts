@@ -45,7 +45,8 @@ export function computePortfolioStats(clients: ClientOrg[]): PortfolioStats {
     totalClients: clients.length,
     activeEngagements: clients.filter((c) => c.status === 'Active').length,
     industriesCovered: industries.size,
-    reportsInProgress: clients.filter((c) => c.status === 'Onboarding').length,
+    // Filled by usePortfolioStats from live uploads / reports / activity.
+    reportsInProgress: 0,
     pendingReviews: 0,
     totalEmissions: 0,
   };

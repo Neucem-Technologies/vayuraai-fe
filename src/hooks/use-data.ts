@@ -1,4 +1,3 @@
-import { MOCK_USERS, MOCK_SME_USERS } from '@/lib/mock-data';
 import { listEmissionFactors } from '@/lib/emission-factors-api';
 import { organisationToClientOrg, computePortfolioStats } from '@/lib/portfolio';
 import { computeDashboardStats, emptyDashboardStats } from '@/lib/dashboard';
@@ -10,11 +9,15 @@ import { activityRecordToEmission } from '@/lib/activity-record-mapper';
 import { uploadDtoToDoc } from '@/lib/upload-mapper';
 import { useActiveClientStore } from '@/hooks/use-active-client-store';
 import { useQuery } from '@tanstack/react-query';
-import { useAuthStore, TOKEN_KEY } from '@/hooks/use-auth';
+import { useAuthStore } from '@/hooks/use-auth';
 import { useIngestionLiveStore } from '@/hooks/use-ingestion-live';
 
 function hasSession(): boolean {
-  return !!localStorage.getItem(TOKEN_KEY);
+  return useAuthStore.getState().isAuthenticated;
+}
+
+function isAwaitingApproval(status: string): boolean {
+  return status === 'Needs Review' || status === 'Ready to Approve';
 }
 
 export function useClients() {
@@ -73,14 +76,39 @@ export function useOrganisation(id: string | null) {
 
 export function usePortfolioStats() {
   const { data: clients } = useClients();
+  const clientIds = clients?.map((c) => c.id) ?? [];
   return useQuery({
-    queryKey: ['portfolioStats', clients?.map((c) => c.id).join(',')],
-    queryFn: async () => computePortfolioStats(clients ?? []),
+    queryKey: ['portfolioStats', clientIds.join(',')],
+    queryFn: async () => {
+      const base = computePortfolioStats(clients ?? []);
+      if (clientIds.length === 0) return base;
+
+      const perClient = await Promise.all(
+        clientIds.map(async (orgId) => {
+          const [uploads, records, reports] = await Promise.all([
+            listUploads(orgId).catch(() => []),
+            listActivityRecords(orgId).catch(() => []),
+            listReports(orgId).catch(() => []),
+          ]);
+          const docs = uploads.map((row) => uploadDtoToDoc(row));
+          return {
+            pendingReviews: docs.filter((u) => isAwaitingApproval(u.status)).length,
+            totalEmissionsKg: records.reduce((sum, row) => sum + row.kgCO2e, 0),
+            reportsInProgress: reports.filter((r) => r.status === 'generating').length,
+          };
+        }),
+      );
+
+      return {
+        ...base,
+        pendingReviews: perClient.reduce((sum, row) => sum + row.pendingReviews, 0),
+        totalEmissions: perClient.reduce((sum, row) => sum + row.totalEmissionsKg, 0),
+        reportsInProgress: perClient.reduce((sum, row) => sum + row.reportsInProgress, 0),
+      };
+    },
     enabled: clients !== undefined,
   });
 }
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function useEmissions() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
@@ -101,6 +129,7 @@ export function useUploads() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
   const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const wsConnected = useIngestionLiveStore((s) => s.wsConnected);
   return useQuery({
     queryKey: ['uploads', tenantId, orgId, isAuthenticated],
     queryFn: async () => {
@@ -109,6 +138,13 @@ export function useUploads() {
       return rows.map((row) => uploadDtoToDoc(row));
     },
     enabled: !!orgId && isAuthenticated,
+    refetchInterval: (query) => {
+      const rows = query.state.data ?? [];
+      const busy = rows.some((u) => u.status === 'Processing');
+      if (busy) return 3000;
+      if (!wsConnected) return 10_000;
+      return false;
+    },
   });
 }
 
@@ -181,26 +217,6 @@ export function useFacilities(orgId?: string | null) {
   });
 }
 
-export function useUsers() {
-  return useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      await delay(400);
-      return MOCK_USERS;
-    },
-  });
-}
-
-export function useSmeUsers() {
-  return useQuery({
-    queryKey: ['smeUsers'],
-    queryFn: async () => {
-      await delay(400);
-      return MOCK_SME_USERS;
-    },
-  });
-}
-
 export function useReports() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
   const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
@@ -248,6 +264,6 @@ export function useDashboardStats() {
       uploadsQuery.isFetched &&
       emissionsQuery.isFetched &&
       reportsQuery.isFetched,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 }

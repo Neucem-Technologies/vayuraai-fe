@@ -4,7 +4,6 @@ import {
   Filter,
   Download,
   Eye,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   TrendingUp,
@@ -37,17 +36,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useEmissions } from "@/hooks/use-data";
+import { useEmissions, useFacilities } from "@/hooks/use-data";
 import { formatEmissionMass } from "@/lib/format-emissions";
 import type { EmissionRecord } from "@/lib/mock-data";
 
 export default function Emissions() {
   const { data: emissions, isLoading } = useEmissions();
+  const { data: orgFacilities = [] } = useFacilities();
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState("all");
   const [facility, setFacility] = useState("all");
-  const [status, setStatus] = useState<"all" | "Approved" | "Ready for Approval" | "Needs Review">("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<EmissionRecord | null>(null);
   const PAGE_SIZE = 12;
@@ -55,30 +53,22 @@ export default function Emissions() {
   const facilities = useMemo(
     () =>
       Array.from(
-        new Set((emissions ?? []).map((e) => e.facility).filter((f) => f && f !== "—")),
+        new Set([
+          ...orgFacilities.map((f) => f.name),
+          ...(emissions ?? []).map((e) => e.facility),
+        ].filter((f) => f && f !== "—")),
       ),
-    [emissions],
+    [emissions, orgFacilities],
   );
-
-  const EMISSION_URGENCY: Record<EmissionRecord["status"], number> = {
-    "Needs Review": 0,
-    "Ready for Approval": 1,
-    "Approved": 2,
-  };
 
   const filtered = (emissions ?? [])
     .filter((e) => {
       if (scope !== "all" && e.scope !== scope) return false;
       if (facility !== "all" && e.facility !== facility) return false;
-      if (status !== "all" && e.status !== status) return false;
       if (search && !e.activity.toLowerCase().includes(search.toLowerCase()) && !e.factorName.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     })
-    .sort((a, b) => {
-      const urgencyDiff = (EMISSION_URGENCY[a.status] ?? 9) - (EMISSION_URGENCY[b.status] ?? 9);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -90,13 +80,53 @@ export default function Emissions() {
     scope3: filtered.filter((e) => e.scope === "Scope 3").reduce((acc, e) => acc + e.kgCO2e, 0),
   };
 
+  const exportCsv = () => {
+    const header = [
+      "date",
+      "activity",
+      "facility",
+      "scope",
+      "category",
+      "quantity",
+      "unit",
+      "factor",
+      "kgCO2e",
+      "source",
+    ];
+    const rows = filtered.map((e) =>
+      [
+        e.date,
+        e.activity,
+        e.facility,
+        e.scope,
+        e.category,
+        e.quantity,
+        e.unit,
+        e.factorName,
+        e.kgCO2e,
+        e.sourceDoc,
+      ]
+        .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+        .join(","),
+    );
+    const blob = new Blob([[header.join(","), ...rows].join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "emissions-ledger.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <PageHeader
         title="Emissions ledger"
         subtitle="Every approved activity record with its applied emission factor and traceable source document."
         actions={
-          <Button variant="outline">
+          <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
@@ -130,14 +160,9 @@ export default function Emissions() {
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col xl:flex-row xl:items-center gap-3 mb-4">
-            <Tabs value={status} onValueChange={(v) => setStatus(v as any)}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="Approved">Approved</TabsTrigger>
-                <TabsTrigger value="Needs Review">Needs Review</TabsTrigger>
-                <TabsTrigger value="Ready for Approval">Ready for Approval</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="text-sm text-muted-foreground">
+              Posted ledger records only — approve documents on Uploads to add rows here.
+            </div>
 
             <div className="flex-1" />
 
@@ -318,12 +343,6 @@ export default function Emissions() {
                     )}
                   </div>
                 </div>
-                {selected.status === "Needs Review" && (
-                  <Button className="w-full">
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Approve record
-                  </Button>
-                )}
               </div>
             </>
           )}

@@ -73,8 +73,10 @@ function uploadAction(status: UploadDoc['status']): string {
       return 'is processing';
     case 'Needs Review':
       return 'needs review:';
-    case 'Completed':
-      return 'completed ingestion for';
+    case 'Ready to Approve':
+      return 'is ready to approve:';
+    case 'Posted':
+      return 'posted to the ledger:';
     case 'Failed':
       return 'failed to process';
   }
@@ -177,9 +179,11 @@ export function computeDashboardStats(
     };
   }
 
-  const pendingReviews = uploads.filter((u) => u.status === 'Needs Review').length;
+  const pendingReviews = uploads.filter(
+    (u) => u.status === 'Needs Review' || u.status === 'Ready to Approve',
+  ).length;
   const processing = uploads.filter((u) => u.status === 'Processing').length;
-  const completed = uploads.filter((u) => u.status === 'Completed').length;
+  const completed = uploads.filter((u) => u.status === 'Posted').length;
   const failed = uploads.filter((u) => u.status === 'Failed').length;
 
   const insights: DashboardInsight[] = [];
@@ -187,8 +191,8 @@ export function computeDashboardStats(
     insights.push({
       id: 'pending-review',
       severity: 'warning',
-      title: `${pendingReviews} document${pendingReviews === 1 ? '' : 's'} need review`,
-      detail: 'Open Uploads to review extracted line items before they feed into emissions calculations.',
+      title: `${pendingReviews} document${pendingReviews === 1 ? '' : 's'} awaiting approval`,
+      detail: 'Open Uploads to review extracted line items and post them to the emissions ledger.',
       timeAgo: 'Now',
     });
   }

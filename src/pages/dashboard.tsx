@@ -148,7 +148,7 @@ export default function Dashboard() {
           accent="blue"
         />
         <KpiCard
-          label="Pending review"
+          label="Awaiting approval"
           value={String(data.pendingReviews)}
           suffix="documents"
           icon={AlertTriangle}
