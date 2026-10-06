@@ -20,9 +20,9 @@ export function ClientLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row">
-      <aside className="w-full md:w-56 border-r bg-sidebar shrink-0">
-        <div className="p-4 border-b">
+    <div className="h-dvh bg-background flex flex-col md:flex-row overflow-hidden">
+      <aside className="w-full md:w-56 md:h-full border-r bg-sidebar shrink-0 flex flex-col max-h-[40vh] md:max-h-none overflow-hidden">
+        <div className="p-4 border-b shrink-0">
           <div className="font-semibold text-sm">{orgName}</div>
           <div className="text-xs text-muted-foreground mt-1">Client portal · read-only</div>
           {access?.permissions.readOnly && (
@@ -33,7 +33,7 @@ export function ClientLayout({ children }: { children: ReactNode }) {
             </div>
           )}
         </div>
-        <nav className="p-2 space-y-1">
+        <nav className="p-2 space-y-1 flex-1 overflow-y-auto">
           {nav.map(({ href, label, icon: Icon }) => (
             <Link key={href} href={href}>
               <span
@@ -47,14 +47,14 @@ export function ClientLayout({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="p-4 mt-auto border-t">
+        <div className="p-4 border-t shrink-0">
           <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => void handleLogout()}>
             <LogOut className="h-4 w-4 mr-2" />
             Sign out
           </Button>
         </div>
       </aside>
-      <main className="flex-1 p-6 overflow-auto">{children}</main>
+      <main className="flex-1 min-h-0 min-w-0 overflow-y-auto p-6">{children}</main>
     </div>
   );
 }

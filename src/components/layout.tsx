@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useIngestionEvents } from "@/hooks/use-ingestion-events";
+import { useIngestionLiveStore } from "@/hooks/use-ingestion-live";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   useIngestionEvents();
@@ -42,6 +43,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { activeClientId, setActiveClient } = useActiveClientStore();
   const { data: portfolioClients = [] } = useClients();
   const activeClient = portfolioClients.find((c) => c.id === activeClientId) ?? null;
+  const clearAllUploads = useIngestionLiveStore((s) => s.clearAllUploads);
 
   const isSme = user?.userType === "sme";
 
@@ -63,6 +65,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleSwitchClient = (id: string) => {
+    if (id !== activeClientId) clearAllUploads();
     setActiveClient(id);
     if (location === "/clients") setLocation("/dashboard");
   };
@@ -83,9 +86,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="min-h-screen bg-background flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 border-r bg-sidebar flex flex-col shrink-0">
+    <div className="h-dvh bg-background flex flex-col md:flex-row overflow-hidden">
+      {/* Sidebar stays fixed to the viewport; only its own nav scrolls if needed */}
+      <aside className="w-full md:w-64 md:h-full border-r bg-sidebar flex flex-col shrink-0 max-h-[45vh] md:max-h-none overflow-hidden">
         {/* Logo */}
         <div className="p-4 flex items-center gap-2 border-b h-16 shrink-0">
           <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
@@ -101,7 +104,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         {/* Consultant: client switcher | SME: org identity badge */}
         {isSme ? (
-          <div className="p-3 border-b">
+          <div className="p-3 border-b shrink-0">
             <div className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md border bg-card text-left">
               <div className="w-8 h-8 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 bg-primary/10 text-primary">
                 {activeClient?.initials ?? "—"}
@@ -118,7 +121,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
         ) : (
-          <div className="p-3 border-b">
+          <div className="p-3 border-b shrink-0">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -178,7 +181,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto py-4">
           <nav className="px-3 space-y-1">
             {/* Consultant-only: Portfolio section */}
             {!isSme && (
@@ -301,8 +304,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* Main Content — header fixed, page body scrolls */}
+      <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <header className="h-16 border-b bg-card flex items-center justify-between px-4 lg:px-8 shrink-0 gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {activeClient && location !== "/clients" && (
@@ -358,8 +361,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto bg-muted/20 p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto h-full">{children}</div>
+        <div className="flex-1 min-h-0 overflow-y-auto bg-muted/20 p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto">{children}</div>
         </div>
       </main>
     </div>
