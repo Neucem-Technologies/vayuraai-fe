@@ -18,6 +18,8 @@ export type UploadDto = {
   /** Activity / billing period derived from document dates (not upload month). */
   periodStart: string;
   periodEnd: string;
+  /** Extracted / posted line count for the uploads table. */
+  lineItemCount: number;
 };
 
 export type PipelineRunDto = {

@@ -10,6 +10,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 
   switch (status.toLowerCase()) {
     case "completed":
+    case "posted":
     case "approved":
     case "active":
     case "final":
@@ -19,8 +20,11 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
     case "processing":
     case "draft":
     case "generating":
-    case "ready for approval":
       badgeClasses = "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
+      break;
+    case "ready to approve":
+    case "ready for approval":
+      badgeClasses = "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800";
       break;
     case "needs review":
     case "pending":

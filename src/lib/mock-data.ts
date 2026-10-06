@@ -1,5 +1,10 @@
 export type Scope = "Scope 1" | "Scope 2" | "Scope 3";
-export type UploadStatus = "Processing" | "Needs Review" | "Completed" | "Failed";
+export type UploadStatus =
+  | "Processing"
+  | "Needs Review"
+  | "Ready to Approve"
+  | "Posted"
+  | "Failed";
 export type ConfidenceLevel = "high" | "medium" | "low";
 export type ConsultantRole = "Partner" | "Manager" | "Consultant" | "Analyst";
 export type SmeRole = "Owner" | "Approver" | "Contributor" | "Viewer";
@@ -98,7 +103,14 @@ const rand = seededRandom(42);
 
 export const MOCK_UPLOADS: UploadDoc[] = (() => {
   const out: UploadDoc[] = [];
-  const statuses: UploadStatus[] = ["Processing", "Needs Review", "Completed", "Completed", "Completed", "Failed"];
+  const statuses: UploadStatus[] = [
+    "Processing",
+    "Needs Review",
+    "Ready to Approve",
+    "Posted",
+    "Posted",
+    "Failed",
+  ];
   const types: ("PDF" | "Excel" | "CSV")[] = ["PDF", "PDF", "Excel", "CSV"];
   for (let i = 1; i <= 56; i++) {
     const status = statuses[Math.floor(rand() * statuses.length)];

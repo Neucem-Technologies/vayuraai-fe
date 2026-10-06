@@ -85,7 +85,14 @@ function formatPeriod(startIso: string, endIso: string) {
   return `${new Date(startIso).toLocaleDateString("en-IN", opts)} - ${new Date(endIso).toLocaleDateString("en-IN", opts)}`;
 }
 
-const STATUS_TABS: ("all" | UploadStatus)[] = ["all", "Processing", "Needs Review", "Completed", "Failed"];
+const STATUS_TABS: ("all" | UploadStatus)[] = [
+  "all",
+  "Processing",
+  "Needs Review",
+  "Ready to Approve",
+  "Posted",
+  "Failed",
+];
 
 export default function Uploads() {
   const [, setLocation] = useLocation();
@@ -179,7 +186,9 @@ export default function Uploads() {
       setUploadError(null);
       setConfirmOpen(false);
       setPendingUpload(null);
-      await queryClient.invalidateQueries({ queryKey: ['uploads', orgId] });
+      await queryClient.invalidateQueries({ queryKey: ['uploads'] });
+      await queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      await queryClient.invalidateQueries({ queryKey: ['portfolioStats'] });
       const first = created[0];
       if (first) setLocation(`/uploads/processing/${first.id}`);
     },
@@ -194,13 +203,19 @@ export default function Uploads() {
     },
   });
 
-  const facilities = Array.from(new Set((uploads ?? []).map((u) => u.facility)));
+  const facilities = Array.from(
+    new Set([
+      ...orgFacilities.map((f) => f.name),
+      ...(uploads ?? []).map((u) => u.facility),
+    ].filter((name) => name && name !== "—")),
+  );
 
   const UPLOAD_URGENCY: Record<UploadStatus, number> = {
     "Needs Review": 0,
-    "Processing": 1,
-    "Failed": 2,
-    "Completed": 3,
+    "Ready to Approve": 1,
+    "Processing": 2,
+    "Failed": 3,
+    "Posted": 4,
   };
 
   const filtered = (uploads ?? [])
@@ -256,7 +271,8 @@ export default function Uploads() {
     all: uploads?.length ?? 0,
     Processing: uploads?.filter((u) => u.status === "Processing").length ?? 0,
     "Needs Review": uploads?.filter((u) => u.status === "Needs Review").length ?? 0,
-    Completed: uploads?.filter((u) => u.status === "Completed").length ?? 0,
+    "Ready to Approve": uploads?.filter((u) => u.status === "Ready to Approve").length ?? 0,
+    Posted: uploads?.filter((u) => u.status === "Posted").length ?? 0,
     Failed: uploads?.filter((u) => u.status === "Failed").length ?? 0,
   };
 
