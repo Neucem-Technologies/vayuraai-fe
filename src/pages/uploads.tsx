@@ -294,7 +294,7 @@ export default function Uploads() {
         type="file"
         multiple
         className="hidden"
-        accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.webp"
+        accept=".pdf,.xlsx,.xls,.csv,.tsv,.txt,.jpg,.jpeg,.png,.webp"
         onChange={(e) => handleFiles(e.target.files)}
       />
 
@@ -317,7 +317,7 @@ export default function Uploads() {
           </div>
           <h3 className="text-base font-medium text-foreground">Drop files here or click to browse</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-lg">
-            Supports PDF invoices, Excel/CSV spreadsheets, and images (JPG, PNG, WebP) up to 25 MB
+            PDF invoices, Excel, CSV, or text exports in your own column layout, and invoice photos. Up to 25 MB.
           </p>
           {stagedFiles.length > 0 && (
               <div className="mt-4 w-full max-w-md text-left space-y-3">

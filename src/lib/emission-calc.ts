@@ -23,12 +23,14 @@ export function normalizeActivityUnit(raw: string): string {
   const original = raw.trim() || 'unit';
   const lower = original.toLowerCase();
 
-  if (lower === 'litre' || lower === 'liter' || lower === 'l') return 'L';
-  if (lower === 'kwh') return 'kWh';
-  if (lower === 'km' || lower === 'kilometre' || lower === 'kilometer') return 'km';
-  if (lower === 'tonne' || lower === 'ton') return 'tonne';
-  if (lower === 'm3' || lower === 'cubic metre' || lower === 'cubic meter') return 'm3';
-  if (lower === 'kg' || lower === 'kilogram') return 'kg';
+  if (['litre', 'liter', 'litres', 'liters', 'ltr', 'ltrs', 'l'].includes(lower)) return 'L';
+  if (lower === 'kwh' || lower === 'kw-h' || lower === 'kw h') return 'kWh';
+  if (lower === 'km' || lower === 'kilometre' || lower === 'kilometer' || lower === 'kms') return 'km';
+  if (['tonne', 'tonnes', 'ton', 'tons', 'mt', 'metric tonne', 'metric ton'].includes(lower)) return 'tonne';
+  if (['m3', 'cubic metre', 'cubic meter', 'kl', 'kilolitre', 'kiloliter', 'kilolitres'].includes(lower)) {
+    return 'm3';
+  }
+  if (lower === 'kg' || lower === 'kgs' || lower === 'kilogram' || lower === 'kilograms') return 'kg';
   if (lower === 'flight' || lower === 'train' || lower === 'trip') return 'trip';
   if (lower === 'hotel' || lower === 'night' || lower === 'nights') return 'night';
   if (lower === 'car' || lower === 'cab' || lower === 'taxi') return 'km';
