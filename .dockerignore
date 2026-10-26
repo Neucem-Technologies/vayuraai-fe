@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.github
+.cursor
+.env
+.env.*
+!.env.example
+docs
+*.md
+.DS_Store
