@@ -37,6 +37,10 @@ export default function Login() {
   useEffect(() => {
     if (!authHydrated || !isAuthenticated) return;
     const { access, onboardingComplete: completed } = useAuthStore.getState();
+    if (access?.kind === "verifier") {
+      setLocation("/verifier");
+      return;
+    }
     if (access?.kind === "client_viewer") {
       setLocation("/client/dashboard");
       return;
@@ -151,7 +155,7 @@ export default function Login() {
             </div>
 
             <Button variant="outline" className="w-full" asChild>
-              <Link href="/signup">Create your account</Link>
+              <Link href="/signup">Start a 14-day trial</Link>
             </Button>
           </form>
         </Form>

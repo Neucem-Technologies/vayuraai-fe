@@ -9,6 +9,7 @@ import {
   getUserType,
   isClientViewer,
   isConsultantWorkspace,
+  isVerifier,
 } from '@vayura/api-contracts/profile';
 import { useActiveClientStore, readStoredActiveClient } from '@/hooks/use-active-client-store';
 import { clearAppQueryCache } from '@/lib/query-client';
@@ -24,7 +25,7 @@ const LEGACY_TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
 function makeFallbackProfileFromLogin(user: { id: string; email: string; userType: UserType }): MeProfile {
-  const kind = user.userType === 'sme' ? 'client_viewer' : 'consultant';
+  const kind = user.userType === 'sme' ? 'client_viewer' : user.userType === 'verifier' ? 'verifier' : 'consultant';
   return {
     user: {
       id: user.id,
@@ -40,6 +41,8 @@ function makeFallbackProfileFromLogin(user: { id: string; email: string; userTyp
       tenantRole: null,
       orgRole: null,
       orgId: null,
+      verifierOrgId: null,
+      verifierName: null,
       allowedOrgIds: [],
       permissions: {
         readOnly: false,
@@ -54,7 +57,7 @@ function makeFallbackProfileFromLogin(user: { id: string; email: string; userTyp
 
 function companyFromProfile(profile: MeProfile): string {
   const clientOrg = isClientViewer(profile) ? profile.organisations[0] : undefined;
-  return clientOrg?.legalName ?? profile.tenant?.name ?? '—';
+  return profile.access.verifierName ?? clientOrg?.legalName ?? profile.tenant?.name ?? '—';
 }
 
 /**
@@ -167,8 +170,9 @@ async function resolveMeProfile(fallbackProfile?: LoginUserFallback): Promise<Me
 }
 
 async function resolveOnboardingComplete(profile: MeProfile): Promise<boolean> {
+  if (isVerifier(profile) || isClientViewer(profile)) return true;
   if (!isConsultantWorkspace(profile)) {
-    return isClientViewer(profile);
+    return false;
   }
   try {
     const { completed } = await authApi.fetchOnboardingStatus();

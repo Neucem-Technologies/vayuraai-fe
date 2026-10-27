@@ -1,8 +1,8 @@
 /** Account type chosen at signup (product persona). */
-export type UserType = 'consultant' | 'sme';
+export type UserType = 'consultant' | 'sme' | 'verifier';
 
 /** Workspace access mode (permissions + routing). Not the same as UserType. */
-export type AccessKind = 'consultant' | 'client_viewer';
+export type AccessKind = 'consultant' | 'client_viewer' | 'verifier';
 
 export type OrganisationStatus = 'active' | 'onboarding' | 'paused' | 'archived';
 export type ConsolidationApproach = 'operational' | 'financial' | 'equity';

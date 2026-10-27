@@ -20,6 +20,8 @@ export type AccessProfile = {
   tenantRole: TenantRole | null;
   orgRole: OrgRole | null;
   orgId: string | null;
+  verifierOrgId: string | null;
+  verifierName: string | null;
   allowedOrgIds: string[];
   permissions: AccessPermissions;
   canEnableClientPortal: boolean;

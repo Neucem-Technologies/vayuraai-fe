@@ -32,7 +32,12 @@ import SettingsFactors from "@/pages/settings/factors";
 import SettingsOrganization from "@/pages/settings/organization";
 import SettingsUsers from "@/pages/settings/users";
 import SettingsFirm from "@/pages/settings/firm";
+import Policies from "@/pages/policies";
+import Verifiers from "@/pages/verifiers";
+import VerifierInbox from "@/pages/verifier-inbox";
+import AcceptVerifierInvite from "@/pages/accept-verifier-invite";
 import Clients from "@/pages/clients";
+import { VerifierLayout } from "@/components/verifier-layout";
 
 import ClientDashboard from "@/pages/client/dashboard";
 import ClientReports from "@/pages/client/reports";
@@ -62,6 +67,10 @@ function ProtectedRoute({
 
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
+  }
+
+  if (access?.kind === "verifier") {
+    return <Redirect to="/verifier" />;
   }
 
   if (isClientViewer) {
@@ -97,11 +106,30 @@ function ClientProtectedRoute({ component: Component }: { component: ComponentTy
     );
   }
   if (!isAuthenticated) return <Redirect to="/login" />;
+  if (access?.kind === "verifier") return <Redirect to="/verifier" />;
   if (access?.kind !== "client_viewer") return <Redirect to="/clients" />;
   return (
     <ClientLayout>
       <Component />
     </ClientLayout>
+  );
+}
+
+function VerifierProtectedRoute({ component: Component }: { component: ComponentType }) {
+  const { isAuthenticated, access, authHydrated } = useAuthStore();
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (access?.kind !== "verifier") return <Redirect to="/clients" />;
+  return (
+    <VerifierLayout>
+      <Component />
+    </VerifierLayout>
   );
 }
 
@@ -115,12 +143,13 @@ function OnboardingRoute({ component: Component }: { component: ComponentType })
     );
   }
   if (!isAuthenticated) return <Redirect to="/login" />;
+  if (access?.kind === "verifier") return <Redirect to="/verifier" />;
   if (access?.kind === "client_viewer") return <Redirect to="/client/dashboard" />;
   return <Component />;
 }
 
 function Router() {
-  const { isAuthenticated, onboardingComplete, authHydrated } = useAuthStore();
+  const { isAuthenticated, onboardingComplete, authHydrated, access } = useAuthStore();
   const isClientViewer = useIsClientViewer();
 
   if (!authHydrated) {
@@ -135,7 +164,9 @@ function Router() {
     <Switch>
       <Route path="/">
         {isAuthenticated
-          ? isClientViewer
+          ? access?.kind === "verifier"
+            ? <Redirect to="/verifier" />
+            : isClientViewer
             ? <Redirect to="/client/dashboard" />
             : onboardingComplete
               ? <Redirect to="/clients" />
@@ -150,6 +181,7 @@ function Router() {
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/accept-client-invite" component={AcceptClientInvite} />
       <Route path="/accept-team-invite" component={AcceptTeamInvite} />
+      <Route path="/accept-verifier-invite" component={AcceptVerifierInvite} />
 
       <Route path="/onboarding/organization" component={() => <OnboardingRoute component={OnboardingOrganization} />} />
       <Route path="/onboarding/industry" component={() => <OnboardingRoute component={OnboardingIndustry} />} />
@@ -166,6 +198,9 @@ function Router() {
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} requireActiveClient />} />
       <Route path="/settings/organization" component={() => <ProtectedRoute component={SettingsOrganization} requireActiveClient />} />
       <Route path="/settings/users" component={() => <ProtectedRoute component={SettingsUsers} />} />
+      <Route path="/policies" component={() => <ProtectedRoute component={Policies} consultantOnly />} />
+      <Route path="/verifiers" component={() => <ProtectedRoute component={Verifiers} consultantOnly />} />
+      <Route path="/verifier" component={() => <VerifierProtectedRoute component={VerifierInbox} />} />
       <Route path="/settings/factors" component={() => <ProtectedRoute component={SettingsFactors} consultantOnly />} />
       <Route path="/settings/firm" component={() => <ProtectedRoute component={SettingsFirm} consultantOnly />} />
 

@@ -78,6 +78,13 @@ export async function acceptTeamInvite(token: string, password: string): Promise
   });
 }
 
+export async function acceptVerifierInvite(token: string, password: string): Promise<AcceptTeamInviteResponse> {
+  return apiFetch<AcceptTeamInviteResponse>('/api/v1/auth/accept-verifier-invite', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+}
+
 export async function logout(): Promise<void> {
   await apiFetch<{ loggedOut: boolean }>('/api/v1/auth/logout', { method: 'POST' });
 }

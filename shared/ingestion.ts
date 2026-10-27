@@ -43,6 +43,8 @@ export type ExtractedLineItemDto = {
   unit: string;
   vendor: string;
   date: string;
+  /** True when the bill and filename had no date, so the date is today until the reviewer changes it. */
+  dateAssumed?: boolean;
   facility: string;
   confidence: 'high' | 'medium' | 'low';
   factorId: string;
@@ -81,6 +83,8 @@ export type ReviewLineInput = {
   unit: string;
   vendor: string;
   date: string;
+  /** True when the reviewer has not replaced a date we filled in as today. */
+  dateAssumed?: boolean;
   facility?: string;
   confidence: 'high' | 'medium' | 'low';
   factorId: string;

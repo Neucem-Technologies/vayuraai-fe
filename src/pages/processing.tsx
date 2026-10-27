@@ -80,6 +80,7 @@ type ReviewLineItem = ExtractedLineItem & {
   factorUnit?: string;
   originalUnit?: string;
   spendAmount?: number;
+  dateAssumed?: boolean;
 };
 
 function inferReportingYear(dates: string[]): number {
@@ -169,6 +170,7 @@ export default function Processing() {
       unit: line.unit,
       vendor: line.vendor,
       date: line.date || "—",
+      dateAssumed: line.dateAssumed,
       facility: line.facility,
       confidence: line.confidence as ConfidenceLevel,
       factorId: line.factorId,
@@ -213,6 +215,7 @@ export default function Processing() {
       unit: item.unit,
       vendor: item.vendor === "—" ? "" : item.vendor,
       date: item.date === "—" ? "" : item.date,
+      dateAssumed: item.dateAssumed,
       facility: item.facility ?? "",
       confidence: item.confidence,
       factorId: item.factorId,
@@ -512,6 +515,11 @@ export default function Processing() {
           <CardDescription>Review, edit, and approve each row before posting to your emissions ledger.</CardDescription>
         </CardHeader>
         <CardContent>
+          {items.some((item) => item.dateAssumed) && (
+            <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              Some lines have no date on the bill. We used today’s date so they can go into the report. Change the date if the bill is for another day, then approve.
+            </div>
+          )}
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
@@ -575,7 +583,22 @@ export default function Processing() {
                           </SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{item.date}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="date"
+                          value={/^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ""}
+                          disabled={!canReview}
+                          className="h-8 w-36"
+                          onChange={(e) =>
+                            updateItem(item.id, { date: e.target.value, dateAssumed: false })
+                          }
+                        />
+                        {item.dateAssumed && (
+                          <p className="mt-1 max-w-36 text-xs text-amber-800">
+                            No date on the bill. Using today.
+                          </p>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <Input
                           type="number"

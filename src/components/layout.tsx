@@ -6,6 +6,8 @@ import {
   Upload,
   Cloud,
   FileText,
+  Scale,
+  ShieldCheck,
   Bell,
   Search,
   LogOut,
@@ -80,6 +82,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   ];
 
   const firmItems = [
+    { icon: Scale, label: "Policy", href: "/policies" },
+    { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
     { icon: FileText, label: "Factor Library", href: "/settings/factors" },
     { icon: Users, label: "Firm Team", href: "/settings/users" },
     { icon: Building2, label: "Firm Settings", href: "/settings/firm" },

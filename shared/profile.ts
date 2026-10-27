@@ -19,10 +19,17 @@ export function isConsultantWorkspace(profile: MeProfile): boolean {
   return profile.access.kind === 'consultant';
 }
 
+export function isVerifier(profile: MeProfile): boolean {
+  return profile.access.kind === 'verifier';
+}
+
 export function resolvePostLoginPath(
   profile: MeProfile,
   onboardingComplete: boolean,
-): '/client/dashboard' | '/dashboard' | '/clients' | '/onboarding/organization' {
+): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' {
+  if (isVerifier(profile)) {
+    return '/verifier';
+  }
   if (isClientViewer(profile)) {
     return '/client/dashboard';
   }

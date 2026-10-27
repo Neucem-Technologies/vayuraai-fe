@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "@/hooks/use-toast";
 import { Cloud, ArrowRight, Briefcase, Building2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
 import type { UserType } from "@vayura/api-contracts/common";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
-import { AuthSplitLayout } from "@/components/auth-split-layout";
+import { AuthSplitLayout, type SignupAudience } from "@/components/auth-split-layout";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Full name is required"),
@@ -32,9 +32,15 @@ const signupSchema = z.object({
 
 export default function Signup() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
   const establishSessionFromLogin = useAuthStore((state) => state.establishSessionFromLogin);
   const [isLoading, setIsLoading] = useState(false);
-  const [accountType, setAccountType] = useState<UserType>("consultant");
+  const [accountType, setAccountType] = useState<SignupAudience>("consultant");
+
+  useEffect(() => {
+    const requested = new URLSearchParams(search).get("as");
+    if (requested === "consultant" || requested === "sme") setAccountType(requested);
+  }, [search]);
 
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
@@ -68,7 +74,7 @@ export default function Signup() {
   }
 
   return (
-    <AuthSplitLayout>
+    <AuthSplitLayout audience={accountType} onChooseAudience={setAccountType}>
       <div className="flex items-center gap-2 mb-8">
         <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
           <Cloud className="text-primary-foreground w-6 h-6" />
@@ -97,7 +103,7 @@ export default function Signup() {
           data-testid="signup-toggle-consultant"
         >
           <Briefcase className="w-3.5 h-3.5" />
-          Consultant
+          Open a practice
         </button>
         <button
           type="button"
@@ -111,7 +117,7 @@ export default function Signup() {
           data-testid="signup-toggle-sme"
         >
           <Building2 className="w-3.5 h-3.5" />
-          Client SME
+          One company
         </button>
       </div>
 

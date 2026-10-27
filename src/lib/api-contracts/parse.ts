@@ -9,10 +9,12 @@ const accessPermissionsSchema = z.object({
 });
 
 const accessProfileSchema = z.object({
-  kind: z.enum(['consultant', 'client_viewer']),
+  kind: z.enum(['consultant', 'client_viewer', 'verifier']),
   tenantRole: z.enum(['consultant_admin', 'consultant_member']).nullable(),
   orgRole: z.enum(['client_viewer', 'client_contributor']).nullable(),
   orgId: z.string().nullable(),
+  verifierOrgId: z.string().nullable().optional().default(null),
+  verifierName: z.string().nullable().optional().default(null),
   allowedOrgIds: z.array(z.string()),
   permissions: accessPermissionsSchema,
   canEnableClientPortal: z.boolean(),
@@ -82,7 +84,7 @@ export const meProfileSchema = z.object({
   user: z.object({
     id: z.string(),
     email: z.string(),
-    userType: z.enum(['consultant', 'sme']),
+    userType: z.enum(['consultant', 'sme', 'verifier']),
     fullName: z.string().nullable(),
   }),
   tenant: tenantSchema.nullable(),
