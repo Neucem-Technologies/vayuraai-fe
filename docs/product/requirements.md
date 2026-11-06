@@ -116,6 +116,7 @@ Post-login routing (`resolvePostLoginPath`): verifier → `/verifier`; client vi
 
 | Doc | Use |
 | --- | --- |
+| [roles-and-permissions.md](./roles-and-permissions.md) | **Roles, users, capability matrix** (firm / SME / viewer / verifier) |
 | [feature-client-viewer-portal.md](./feature-client-viewer-portal.md) | Client portal behaviour (shipped; keep as reference) |
 | [ui-ux-foundation.md](./ui-ux-foundation.md) | UI stack conventions |
 | [../development-plan.md](../development-plan.md) | Frontend module status / next work |

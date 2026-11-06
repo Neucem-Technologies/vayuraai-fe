@@ -27,6 +27,7 @@
 - **Access kinds:** `consultant` | `client_viewer` | `verifier` (see `access-context.service.ts`). Tenant roles: `consultant_admin` | `consultant_member`.
 - **Shipped path:** auth → tenancy → billing (402 gate) → facilities → ingestion/workers → review → emissions → reports → controls/assurance → client portal + verifiers.
 - **Product details / flows:** `vayura-frontend/docs/product/requirements.md`.
+- **Roles / permissions matrix:** `vayura-frontend/docs/product/roles-and-permissions.md`.
 
 ---
 
