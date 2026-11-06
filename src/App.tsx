@@ -27,11 +27,15 @@ import Uploads from "@/pages/uploads";
 import Processing from "@/pages/processing";
 import Emissions from "@/pages/emissions";
 import Reports from "@/pages/reports";
+import Offsets from "@/pages/offsets";
+import FindConsultants from "@/pages/find-consultants";
+import Billing from "@/pages/billing";
 
 import SettingsFactors from "@/pages/settings/factors";
 import SettingsOrganization from "@/pages/settings/organization";
 import SettingsUsers from "@/pages/settings/users";
 import SettingsFirm from "@/pages/settings/firm";
+import SettingsControls from "@/pages/settings/controls";
 import Policies from "@/pages/policies";
 import Verifiers from "@/pages/verifiers";
 import VerifierInbox from "@/pages/verifier-inbox";
@@ -42,16 +46,24 @@ import { VerifierLayout } from "@/components/verifier-layout";
 import ClientDashboard from "@/pages/client/dashboard";
 import ClientReports from "@/pages/client/reports";
 
+/** SPA mirror of API requirePaidSubscription — unpaid workspaces stay on /billing. */
+function billingBlocked(): boolean {
+  const status = useAuthStore.getState().tenant?.subscriptionStatus;
+  return status === "none" || status === "canceled" || status === "past_due";
+}
+
 function ProtectedRoute({
   component: Component,
   requireOnboarding = true,
   requireActiveClient = false,
   consultantOnly = false,
+  requireBilling = true,
 }: {
   component: ComponentType;
   requireOnboarding?: boolean;
   requireActiveClient?: boolean;
   consultantOnly?: boolean;
+  requireBilling?: boolean;
 }) {
   const { isAuthenticated, onboardingComplete, access, authHydrated } = useAuthStore();
   const activeClientId = useActiveClientStore((s) => s.activeClientId);
@@ -77,16 +89,24 @@ function ProtectedRoute({
     return <Redirect to="/client/dashboard" />;
   }
 
+  if (requireBilling && billingBlocked()) {
+    return <Redirect to="/billing" />;
+  }
+
   if (requireOnboarding && !onboardingComplete) {
     return <Redirect to="/onboarding/organization" />;
   }
 
-  if (consultantOnly && access?.kind !== "consultant") {
+  const smeSolo =
+    useAuthStore.getState().tenant?.smeSolo || useAuthStore.getState().user?.userType === "sme";
+
+  if (consultantOnly && (access?.kind !== "consultant" || smeSolo)) {
     return <Redirect to="/dashboard" />;
   }
 
   if (requireActiveClient && !activeClientId) {
-    return <Redirect to="/clients" />;
+    // SME solo has no portfolio page; wait until the org syncs as active client.
+    return <Redirect to={smeSolo ? "/dashboard" : "/clients"} />;
   }
 
   return (
@@ -94,6 +114,11 @@ function ProtectedRoute({
       <Component />
     </AppLayout>
   );
+}
+
+function operatorHomePath(): "/dashboard" | "/clients" {
+  const { tenant, user } = useAuthStore.getState();
+  return tenant?.smeSolo || user?.userType === "sme" ? "/dashboard" : "/clients";
 }
 
 function ClientProtectedRoute({ component: Component }: { component: ComponentType }) {
@@ -107,7 +132,7 @@ function ClientProtectedRoute({ component: Component }: { component: ComponentTy
   }
   if (!isAuthenticated) return <Redirect to="/login" />;
   if (access?.kind === "verifier") return <Redirect to="/verifier" />;
-  if (access?.kind !== "client_viewer") return <Redirect to="/clients" />;
+  if (access?.kind !== "client_viewer") return <Redirect to={operatorHomePath()} />;
   return (
     <ClientLayout>
       <Component />
@@ -125,7 +150,7 @@ function VerifierProtectedRoute({ component: Component }: { component: Component
     );
   }
   if (!isAuthenticated) return <Redirect to="/login" />;
-  if (access?.kind !== "verifier") return <Redirect to="/clients" />;
+  if (access?.kind !== "verifier") return <Redirect to={operatorHomePath()} />;
   return (
     <VerifierLayout>
       <Component />
@@ -145,6 +170,7 @@ function OnboardingRoute({ component: Component }: { component: ComponentType })
   if (!isAuthenticated) return <Redirect to="/login" />;
   if (access?.kind === "verifier") return <Redirect to="/verifier" />;
   if (access?.kind === "client_viewer") return <Redirect to="/client/dashboard" />;
+  if (billingBlocked()) return <Redirect to="/billing" />;
   return <Component />;
 }
 
@@ -168,8 +194,10 @@ function Router() {
             ? <Redirect to="/verifier" />
             : isClientViewer
             ? <Redirect to="/client/dashboard" />
+            : billingBlocked()
+              ? <Redirect to="/billing" />
             : onboardingComplete
-              ? <Redirect to="/clients" />
+              ? <Redirect to={operatorHomePath()} />
               : <Redirect to="/onboarding/organization" />
           : <Redirect to="/signup" />}
       </Route>
@@ -182,6 +210,8 @@ function Router() {
       <Route path="/accept-client-invite" component={AcceptClientInvite} />
       <Route path="/accept-team-invite" component={AcceptTeamInvite} />
       <Route path="/accept-verifier-invite" component={AcceptVerifierInvite} />
+
+      <Route path="/billing" component={Billing} />
 
       <Route path="/onboarding/organization" component={() => <OnboardingRoute component={OnboardingOrganization} />} />
       <Route path="/onboarding/industry" component={() => <OnboardingRoute component={OnboardingIndustry} />} />
@@ -196,10 +226,13 @@ function Router() {
       <Route path="/uploads/processing/:id" component={() => <ProtectedRoute component={Processing} requireActiveClient />} />
       <Route path="/emissions" component={() => <ProtectedRoute component={Emissions} requireActiveClient />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} requireActiveClient />} />
+      <Route path="/offsets" component={() => <ProtectedRoute component={Offsets} requireActiveClient />} />
+      <Route path="/find-consultants" component={() => <ProtectedRoute component={FindConsultants} />} />
       <Route path="/settings/organization" component={() => <ProtectedRoute component={SettingsOrganization} requireActiveClient />} />
       <Route path="/settings/users" component={() => <ProtectedRoute component={SettingsUsers} />} />
+      <Route path="/settings/controls" component={() => <ProtectedRoute component={SettingsControls} requireActiveClient />} />
       <Route path="/policies" component={() => <ProtectedRoute component={Policies} consultantOnly />} />
-      <Route path="/verifiers" component={() => <ProtectedRoute component={Verifiers} consultantOnly />} />
+      <Route path="/verifiers" component={() => <ProtectedRoute component={Verifiers} />} />
       <Route path="/verifier" component={() => <VerifierProtectedRoute component={VerifierInbox} />} />
       <Route path="/settings/factors" component={() => <ProtectedRoute component={SettingsFactors} consultantOnly />} />
       <Route path="/settings/firm" component={() => <ProtectedRoute component={SettingsFirm} consultantOnly />} />

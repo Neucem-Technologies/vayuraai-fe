@@ -1,8 +1,10 @@
 import type {
+  BillingInterval,
   ConsolidationApproach,
   FacilityPurpose,
   OrganisationStatus,
   OrgRole,
+  SubscriptionStatus,
   TenantPlan,
   TenantRole,
 } from './common.js';
@@ -87,6 +89,12 @@ export type TenantDto = {
   reportFooterDisclaimer: string;
   reportLogoPlacement: ReportLogoPlacement;
   hasReportLogo: boolean;
+  listed: boolean;
+  listingBio: string;
+  smeSolo: boolean;
+  subscriptionStatus: SubscriptionStatus;
+  billingInterval: BillingInterval | null;
+  paidAt: string | null;
 };
 
 export type TeamMemberDto = {

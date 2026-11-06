@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Building2,
+  Briefcase,
   CreditCard,
   ShieldCheck,
   KeyRound,
@@ -43,10 +44,12 @@ import {
   uploadTenantReportLogo,
   type ReportLogoPlacement,
 } from "@/lib/tenant-api";
+import { updateTenantListing } from "@/lib/consultants-api";
 import { ApiRequestError } from "@/lib/api-client";
 import { toast } from "sonner";
 import type { TenantPlan } from "@vayura/api-contracts/common";
 import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
 
 const AUTH_SNAPSHOT_KEY = "vayura_auth";
 
@@ -107,6 +110,8 @@ export default function FirmSettings() {
   const [entityType, setEntityType] = useState("");
   const [teamSize, setTeamSize] = useState("");
   const [primaryService, setPrimaryService] = useState("");
+  const [listed, setListed] = useState(false);
+  const [listingBio, setListingBio] = useState("");
 
   // Sync from server tenant only when those fields change — not on every new object
   // reference (which would wipe in-progress edits / optimistic toggle state).
@@ -127,6 +132,8 @@ export default function FirmSettings() {
     setEntityType(tenant.entityType ?? "");
     setTeamSize(tenant.teamSize ?? "");
     setPrimaryService(tenant.primaryService ?? "");
+    setListed(Boolean(tenant.listed));
+    setListingBio(tenant.listingBio ?? "");
   }, [
     tenant?.id,
     tenant?.whiteLabelEnabled,
@@ -144,6 +151,8 @@ export default function FirmSettings() {
     tenant?.entityType,
     tenant?.teamSize,
     tenant?.primaryService,
+    tenant?.listed,
+    tenant?.listingBio,
   ]);
 
   useEffect(() => {
@@ -313,6 +322,25 @@ export default function FirmSettings() {
     },
   });
 
+  const listingMutation = useMutation({
+    mutationFn: () =>
+      updateTenantListing({
+        listed,
+        listingBio: listingBio.trim(),
+      }),
+    onSuccess: (updated) => {
+      persistTenantUpdate(updated);
+      setListed(Boolean(updated.listed));
+      setListingBio(updated.listingBio ?? "");
+      toast.success(updated.listed ? "Firm is listed on Vayura" : "Listing removed");
+    },
+    onError: (e) => {
+      toast.error("Could not update listing", {
+        description: e instanceof ApiRequestError ? e.message : "Try again.",
+      });
+    },
+  });
+
   const planMutation = useMutation({
     mutationFn: (plan: TenantPlan) => updateTenantProfile({ plan }),
     onSuccess: (updated) => {
@@ -419,6 +447,62 @@ export default function FirmSettings() {
               )}
             </CardContent>
           </Card>
+
+          {!tenant?.smeSolo ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-muted-foreground" />
+                  <CardTitle className="text-base">List on Vayura</CardTitle>
+                </div>
+                <CardDescription>
+                  Listing is free. Businesses can find your firm and send an introduction request. This does not auto-add them as clients.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-3 border rounded-md">
+                  <div>
+                    <div className="font-medium text-sm">Show my firm in Find a consultant</div>
+                    <div className="text-xs text-muted-foreground">
+                      Uses your display name, primary service, country, and bio.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={listed ? "default" : "outline"}
+                    size="sm"
+                    disabled={!isAdmin || listingMutation.isPending}
+                    onClick={() => setListed((v) => !v)}
+                  >
+                    {listed ? "Listed" : "Not listed"}
+                  </Button>
+                </div>
+                <div>
+                  <Label>Short bio for the directory</Label>
+                  <Textarea
+                    className="mt-1.5"
+                    rows={3}
+                    maxLength={500}
+                    value={listingBio}
+                    onChange={(e) => setListingBio(e.target.value)}
+                    disabled={!isAdmin}
+                    placeholder="What you help businesses with (BRSR, GHG inventory, verification readiness…)"
+                  />
+                </div>
+                {isAdmin ? (
+                  <div className="flex justify-end border-t pt-2">
+                    <Button
+                      data-testid="button-save-listing"
+                      disabled={listingMutation.isPending}
+                      onClick={() => listingMutation.mutate()}
+                    >
+                      {listingMutation.isPending ? "Saving…" : "Save listing"}
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader>

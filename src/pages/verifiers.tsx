@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useIsConsultantAdmin } from "@/hooks/use-auth";
+import { useAuthStore, useIsConsultantAdmin } from "@/hooks/use-auth";
 import { useClients } from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { toast } from "@/hooks/use-toast";
@@ -46,6 +46,9 @@ export default function Verifiers() {
   const search = useSearch();
   const initialThread = new URLSearchParams(search).get("thread");
   const isAdmin = useIsConsultantAdmin();
+  const tenant = useAuthStore((s) => s.tenant);
+  const user = useAuthStore((s) => s.user);
+  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
   const queryClient = useQueryClient();
   const clients = useClients();
   const activeClientId = useActiveClientStore((s) => s.activeClientId);
@@ -123,7 +126,11 @@ export default function Verifiers() {
     <div data-testid="page-verifiers">
       <PageHeader
         title="Verifiers"
-        subtitle="Onboard an assurance firm such as VKU Veridicriton or ProClime, then keep the review on the platform."
+        subtitle={
+          isSme
+            ? "When your inventory and reports are ready, invite a third-party verification agency to review them on Vayura."
+            : "Onboard an assurance firm, then keep the review on the platform."
+        }
         actions={
           isAdmin ? (
             <Button onClick={() => { setInviteLink(null); setInviteOpen(true); }} data-testid="button-invite-verifier">

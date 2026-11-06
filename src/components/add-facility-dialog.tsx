@@ -30,6 +30,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   defaultCountry?: string;
   defaultPurpose?: FacilityPurpose;
+  /** When true, hide the purpose switcher (e.g. uploads/review only create operations sites). */
+  lockPurpose?: boolean;
   clientName?: string;
   onCreated?: (facility: FacilityDto) => void;
 };
@@ -40,6 +42,7 @@ export function AddFacilityDialog({
   onOpenChange,
   defaultCountry = "India",
   defaultPurpose = "operations",
+  lockPurpose = false,
   clientName,
   onCreated,
 }: Props) {
@@ -77,7 +80,7 @@ export function AddFacilityDialog({
         employees: employees ? Number(employees) : 0,
       }),
     onSuccess: async (facility) => {
-      await queryClient.invalidateQueries({ queryKey: ["facilities", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["facilities"] });
       toast({
         title: purpose === "generation" ? "Generation site added" : "Facility added",
         description:
@@ -116,25 +119,27 @@ export function AddFacilityDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div>
-            <Label className="text-sm">Site role</Label>
-            <Select
-              value={purpose}
-              onValueChange={(v) => {
-                const next = v as FacilityPurpose;
-                setPurpose(next);
-                setType(typesForPurpose(next)[0]);
-              }}
-            >
-              <SelectTrigger className="mt-1" data-testid="select-facility-purpose">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="operations">Operations (consumes energy)</SelectItem>
-                <SelectItem value="generation">Generation / offset (produces energy)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {!lockPurpose && (
+            <div>
+              <Label className="text-sm">Site role</Label>
+              <Select
+                value={purpose}
+                onValueChange={(v) => {
+                  const next = v as FacilityPurpose;
+                  setPurpose(next);
+                  setType(typesForPurpose(next)[0]);
+                }}
+              >
+                <SelectTrigger className="mt-1" data-testid="select-facility-purpose">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operations">Operations (consumes energy)</SelectItem>
+                  <SelectItem value="generation">Generation / offset (produces energy)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label className="text-sm">Facility name</Label>
             <Input

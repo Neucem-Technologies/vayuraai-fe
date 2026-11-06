@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -8,8 +8,6 @@ import {
   FileText,
   Scale,
   ShieldCheck,
-  Bell,
-  Search,
   LogOut,
   Building,
   Users,
@@ -18,6 +16,9 @@ import {
   Check,
   Building2,
   ArrowLeftRight,
+  Leaf,
+  UserSearch,
+  ClipboardList,
 } from "lucide-react";
 import { useAuthStore, useTenant } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
@@ -32,10 +33,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useIngestionEvents } from "@/hooks/use-ingestion-events";
 import { useIngestionLiveStore } from "@/hooks/use-ingestion-live";
+import {
+  listRecentFys,
+  readStoredReportingFy,
+  writeStoredReportingFy,
+  type ReportingFy,
+} from "@/lib/reporting-fy";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   useIngestionEvents();
@@ -46,19 +52,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { data: portfolioClients = [] } = useClients();
   const activeClient = portfolioClients.find((c) => c.id === activeClientId) ?? null;
   const clearAllUploads = useIngestionLiveStore((s) => s.clearAllUploads);
+  const [reportingFy, setReportingFy] = useState<ReportingFy>(() => readStoredReportingFy());
+  const fyOptions = listRecentFys(5);
 
-  const isSme = user?.userType === "sme";
+  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
+  const hidePortfolio = isSme;
 
-  // Ensure consultants always have a valid active client once the portfolio loads.
+  // Ensure an active organisation is selected once the list loads (consultant portfolio or SME solo).
   useEffect(() => {
-    if (isSme || portfolioClients.length === 0) return;
+    if (portfolioClients.length === 0) return;
 
     const currentIsValid =
       activeClientId !== null && portfolioClients.some((c) => c.id === activeClientId);
     if (!currentIsValid) {
       setActiveClient(portfolioClients[0].id);
     }
-  }, [isSme, activeClientId, portfolioClients, setActiveClient]);
+  }, [activeClientId, portfolioClients, setActiveClient]);
 
   const handleLogout = async () => {
     setActiveClient(null);
@@ -77,17 +86,32 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { icon: Upload, label: "Uploads", href: "/uploads" },
     { icon: Cloud, label: "Emissions", href: "/emissions" },
     { icon: FileText, label: "Reports", href: "/reports" },
+    { icon: Leaf, label: "Offsets", href: "/offsets" },
     { icon: Building, label: isSme ? "My Organisation" : "Client Profile", href: "/settings/organization" },
-    ...(isSme ? [{ icon: Users, label: "Users & Access", href: "/settings/users" }] : []),
+    { icon: ClipboardList, label: "Controls", href: "/settings/controls" },
+    ...(isSme
+      ? [
+          { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
+          { icon: UserSearch, label: "Find a consultant", href: "/find-consultants" },
+          { icon: Users, label: "Team", href: "/settings/users" },
+        ]
+      : [{ icon: UserSearch, label: "Find a consultant", href: "/find-consultants" }]),
   ];
 
-  const firmItems = [
-    { icon: Scale, label: "Policy", href: "/policies" },
-    { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
-    { icon: FileText, label: "Factor Library", href: "/settings/factors" },
-    { icon: Users, label: "Firm Team", href: "/settings/users" },
-    { icon: Building2, label: "Firm Settings", href: "/settings/firm" },
-  ];
+  const firmItems = hidePortfolio
+    ? []
+    : [
+        { icon: Scale, label: "Policy", href: "/policies" },
+        { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
+        { icon: FileText, label: "Factor Library", href: "/settings/factors" },
+        { icon: Users, label: "Firm Team", href: "/settings/users" },
+        { icon: Building2, label: "Firm Settings", href: "/settings/firm" },
+      ];
+
+  const selectFy = (fy: ReportingFy) => {
+    writeStoredReportingFy(fy.startYear);
+    setReportingFy(fy);
+  };
 
   return (
     <div className="h-dvh bg-background flex flex-col md:flex-row overflow-hidden">
@@ -257,8 +281,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </>
             )}
 
-            {/* SME: firm advisor context */}
-            {isSme && tenant && (
+            {/* Invited SME under a consulting firm (not self-serve solo) */}
+            {isSme && tenant && !tenant.smeSolo && user?.userType === "sme" && (
               <div className="mt-6 mx-1 p-3 rounded-md border bg-card">
                 <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Your advisor</div>
                 <div className="text-sm font-medium truncate">{tenant.name}</div>
@@ -317,25 +341,39 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <Briefcase className="w-3.5 h-3.5" />
                 <span>{isSme ? activeClient.shortName : activeClient.name}</span>
                 <span className="text-muted-foreground/40">/</span>
-                <span className="text-foreground font-medium">FY {new Date().getFullYear() - 1}-{String(new Date().getFullYear()).slice(-2)}</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-foreground font-medium"
+                      data-testid="button-reporting-fy"
+                    >
+                      {reportingFy.label}
+                      <ChevronsUpDown className="ml-1 h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuLabel>Reporting year (Apr–Mar)</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {fyOptions.map((fy) => (
+                      <DropdownMenuItem key={fy.startYear} onClick={() => selectFy(fy)}>
+                        <Check
+                          className={`mr-2 h-3.5 w-3.5 ${fy.startYear === reportingFy.startYear ? "opacity-100" : "opacity-0"}`}
+                        />
+                        {fy.label}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setLocation("/settings/controls")}>
+                      Period close &amp; audit…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
-            <div className="relative w-full max-w-md ml-auto md:ml-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder={isSme ? "Search uploads, emissions, reports..." : "Search clients, invoices, reports..."}
-                className="w-full pl-9 bg-muted/50 border-none focus-visible:ring-1"
-                data-testid="input-global-search"
-              />
-            </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="text-muted-foreground relative" data-testid="button-notifications">
-              <Bell className="h-5 w-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full"></span>
-            </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="button-avatar-menu">

@@ -1,4 +1,4 @@
-export type ReportFramework = 'BRSR' | 'GRI' | 'GHG';
+export type ReportFramework = 'BRSR' | 'GRI' | 'GHG' | 'CBAM';
 
 export type ReportStatus = 'generating' | 'final' | 'submitted' | 'failed';
 

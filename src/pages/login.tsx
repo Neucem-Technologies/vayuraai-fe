@@ -36,7 +36,7 @@ export default function Login() {
 
   useEffect(() => {
     if (!authHydrated || !isAuthenticated) return;
-    const { access, onboardingComplete: completed } = useAuthStore.getState();
+    const { access, onboardingComplete: completed, user, tenant } = useAuthStore.getState();
     if (access?.kind === "verifier") {
       setLocation("/verifier");
       return;
@@ -45,7 +45,15 @@ export default function Login() {
       setLocation("/client/dashboard");
       return;
     }
-    setLocation(completed ? "/clients" : "/onboarding/organization");
+    const status = tenant?.subscriptionStatus;
+    if (status === "none" || status === "canceled" || status === "past_due") {
+      setLocation("/billing");
+      return;
+    }
+    const smeSolo = Boolean(tenant?.smeSolo) || user?.userType === "sme";
+    setLocation(
+      completed ? (smeSolo ? "/dashboard" : "/clients") : "/onboarding/organization",
+    );
   }, [authHydrated, isAuthenticated, onboardingComplete, setLocation]);
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -155,7 +163,7 @@ export default function Login() {
             </div>
 
             <Button variant="outline" className="w-full" asChild>
-              <Link href="/signup">Start a 14-day trial</Link>
+              <Link href="/signup">Create your account</Link>
             </Button>
           </form>
         </Form>

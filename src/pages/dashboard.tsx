@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useDashboardStats } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
+import { useAuthStore } from "@/hooks/use-auth";
 import { formatEmissions } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
 
@@ -96,6 +97,9 @@ function ChartPlaceholder({ title, description }: { title: string; description: 
 export default function Dashboard() {
   const { data, isLoading } = useDashboardStats();
   const activeClient = useActiveClient();
+  const tenant = useAuthStore((s) => s.tenant);
+  const user = useAuthStore((s) => s.user);
+  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
 
   if (isLoading || !data) {
     return (
@@ -132,6 +136,40 @@ export default function Dashboard() {
           </Button>
         }
       />
+
+      {isSme ? (
+        <Card className="mb-6 border-primary/20 bg-primary/5">
+          <CardContent className="grid gap-4 p-5 md:grid-cols-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">1. Measure</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Upload bills and review activity lines.
+              </p>
+              <Button asChild variant="link" className="h-auto px-0 pt-2">
+                <Link href="/uploads">Go to uploads</Link>
+              </Button>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">2. Download</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Prepare GHG / BRSR / GRI / CBAM PDFs and export emissions CSV.
+              </p>
+              <Button asChild variant="link" className="h-auto px-0 pt-2">
+                <Link href="/reports">Open reports</Link>
+              </Button>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">3. Assign verifier</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                When the inventory is ready, invite a third-party verification agency.
+              </p>
+              <Button asChild variant="link" className="h-auto px-0 pt-2">
+                <Link href="/verifiers">Invite verifier</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <KpiCard

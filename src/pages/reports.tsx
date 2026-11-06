@@ -56,8 +56,12 @@ import {
 import { ApiRequestError } from "@/lib/api-client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import {
+  boundaryLabelDisplay,
+  reportBoundaryOptions,
+} from "@/lib/facilities";
 import { defaultReportingPeriod } from "@/lib/reporting-period";
+import { Link } from "wouter";
 
 const TEMPLATES = [
   {
@@ -82,6 +86,14 @@ const TEMPLATES = [
     description:
       "Comprehensive Scope 1, 2, and 3 inventory with optional market vs. location-based reporting.",
     sections: 6,
+  },
+  {
+    id: "CBAM",
+    name: "CBAM supplier figures",
+    standard: "CBAM",
+    description:
+      "Direct emissions and purchased electricity from the same approved inventory, for an EU buyer asking about embedded emissions.",
+    sections: 4,
   },
 ] as const;
 
@@ -132,18 +144,25 @@ export default function Reports() {
     setPeriodEnd(suggestedPeriod.end);
   }, [orgId, suggestedPeriod.start, suggestedPeriod.end]);
 
-  const boundaryOptions = useMemo(() => {
-    const opts = [
-      { value: "all", label: "All facilities (operational control)" },
-      { value: "india", label: "India operations only" },
-    ];
-    for (const f of facilities) {
-      if (f.name !== ORGANISATION_WIDE_FACILITY) {
-        opts.push({ value: f.name, label: f.name });
-      }
+  const boundaryOptions = useMemo(() => reportBoundaryOptions(facilities), [facilities]);
+
+  const matchingActivityCount = useMemo(() => {
+    const inPeriod = emissions.filter((e) => {
+      const d = e.date?.slice(0, 10);
+      if (!d) return false;
+      return d >= periodStart && d <= periodEnd;
+    });
+    if (boundary === "all") return inPeriod.length;
+    if (boundary === "india") {
+      return inPeriod.filter((e) => {
+        const f = (e.facility ?? "").toLowerCase();
+        return f === "india" || f.endsWith(", india") || /\b(india|indian)\b/.test(f);
+      }).length;
     }
-    return opts;
-  }, [facilities]);
+    return inPeriod.filter(
+      (e) => (e.facility ?? "").trim().toLowerCase() === boundary.trim().toLowerCase(),
+    ).length;
+  }, [emissions, periodStart, periodEnd, boundary]);
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -256,16 +275,25 @@ export default function Reports() {
         title="Reports"
         subtitle={
           client
-            ? `Generate and submit audit-ready disclosures for ${client.name}.`
-            : "Generate, manage, and submit audit-ready disclosures aligned to BRSR, GRI, and the GHG Protocol."
+            ? `Generate disclosures for ${client.name} scoped to a reporting period and site boundary.`
+            : "Generate disclosures aligned to BRSR, GRI, the GHG Protocol, and a CBAM supplier pack."
         }
         actions={
-          <Button onClick={() => setOpen(true)} data-testid="button-new-report">
-            <Plus className="w-4 h-4 mr-2" />
-            New report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/settings/organization">Manage sites</Link>
+            </Button>
+            <Button onClick={() => setOpen(true)} data-testid="button-new-report">
+              <Plus className="w-4 h-4 mr-2" />
+              New report
+            </Button>
+          </div>
         }
       />
+
+      <p className="mb-4 text-xs text-muted-foreground">
+        Boundary filters approved activity by site. Inventory totals exclude carbon offsets unless a disclosure explicitly states otherwise.
+      </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         {TEMPLATES.map((t) => (
@@ -314,6 +342,7 @@ export default function Reports() {
                   <TableHead>Report</TableHead>
                   <TableHead>Standard</TableHead>
                   <TableHead>Period</TableHead>
+                  <TableHead>Boundary</TableHead>
                   <TableHead>Generated</TableHead>
                   <TableHead className="text-right">Total emissions</TableHead>
                   <TableHead>Status</TableHead>
@@ -324,15 +353,15 @@ export default function Reports() {
                 {isLoading &&
                   Array.from({ length: 4 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={8}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))}
                 {!isLoading && (reports?.length ?? 0) === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12 text-sm text-muted-foreground">
-                      No reports yet for this client. Generate a BRSR, GRI, or GHG inventory from approved
+                    <TableCell colSpan={8} className="text-center py-12 text-sm text-muted-foreground">
+                      No reports yet for this client. Generate a BRSR, GRI, GHG, or CBAM pack from approved
                       emissions.
                     </TableCell>
                   </TableRow>
@@ -367,6 +396,9 @@ export default function Reports() {
                           </span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{r.periodLabel}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {boundaryLabelDisplay(r.boundaryLabel)}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {r.generatedAt ?? "—"}
                         </TableCell>
@@ -493,7 +525,7 @@ export default function Reports() {
             <div>
               <Label className="text-sm">Reporting boundary</Label>
               <Select value={boundary} onValueChange={setBoundary}>
-                <SelectTrigger className="mt-1">
+                <SelectTrigger className="mt-1" data-testid="select-report-boundary">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -504,13 +536,22 @@ export default function Reports() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Operations sites only.{" "}
+                <Link href="/settings/organization" className="underline underline-offset-2">
+                  Add or rename sites
+                </Link>
+              </p>
             </div>
             <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2">
               <Calendar className="w-4 h-4 mt-0.5 shrink-0" />
               <span>
-                Period defaults to the Indian FY covering this client’s latest approved activity
-                ({suggestedPeriod.start} → {suggestedPeriod.end}). Only ledger rows inside that window
-                are included.
+                Period defaults to the Indian FY covering this organisation’s latest approved activity
+                ({suggestedPeriod.start} → {suggestedPeriod.end}).{" "}
+                <span className="text-foreground font-medium">
+                  {matchingActivityCount} approved line{matchingActivityCount === 1 ? "" : "s"}
+                </span>{" "}
+                match this period and boundary.
               </span>
             </div>
           </div>

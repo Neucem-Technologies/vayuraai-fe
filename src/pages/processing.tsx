@@ -63,7 +63,11 @@ import { cn } from "@/lib/utils";
 import { friendlyIngestionError } from "@/lib/ingestion-errors";
 import { formatEmissionMass } from "@/lib/format-emissions";
 import { computeLineKgCo2e } from "@/lib/emission-calc";
-import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import {
+  ORGANISATION_WIDE_FACILITY,
+  normalizeFacilityLabel,
+  operationalFacilities,
+} from "@/lib/facilities";
 import { AddFacilityDialog } from "@/components/add-facility-dialog";
 import { SpreadsheetPreview } from "@/components/spreadsheet-preview";
 import { isSpreadsheetFile } from "@/lib/is-spreadsheet";
@@ -171,7 +175,7 @@ export default function Processing() {
       vendor: line.vendor,
       date: line.date || "—",
       dateAssumed: line.dateAssumed,
-      facility: line.facility,
+      facility: normalizeFacilityLabel(line.facility, line.category),
       confidence: line.confidence as ConfidenceLevel,
       factorId: line.factorId,
       factorName: line.factorName,
@@ -191,8 +195,9 @@ export default function Processing() {
 
   const facilityOptions = useMemo(() => {
     const names = new Set<string>([ORGANISATION_WIDE_FACILITY]);
-    for (const f of orgFacilities) names.add(f.name);
-    if (detail?.upload.facilityLabel) names.add(detail.upload.facilityLabel);
+    for (const f of operationalFacilities(orgFacilities)) names.add(f.name);
+    const uploadLabel = detail?.upload.facilityLabel?.trim();
+    if (uploadLabel) names.add(uploadLabel);
     for (const item of items) {
       if (item.facility?.trim()) names.add(item.facility.trim());
     }
@@ -216,7 +221,7 @@ export default function Processing() {
       vendor: item.vendor === "—" ? "" : item.vendor,
       date: item.date === "—" ? "" : item.date,
       dateAssumed: item.dateAssumed,
-      facility: item.facility ?? "",
+      facility: normalizeFacilityLabel(item.facility, item.category),
       confidence: item.confidence,
       factorId: item.factorId,
       originalUnit: item.originalUnit,
@@ -572,12 +577,14 @@ export default function Processing() {
                           <SelectContent position="popper" sideOffset={4} className="max-h-72 z-[200]">
                             {facilityOptions.map((name) => (
                               <SelectItem key={name} value={name} className="text-xs">
-                                {name}
+                                {name === ORGANISATION_WIDE_FACILITY
+                                  ? "Organisation-wide (shared / SaaS)"
+                                  : name}
                               </SelectItem>
                             ))}
                             {orgId && canReview && (
                               <SelectItem value={ADD_FACILITY_VALUE} className="text-xs">
-                                + Add facility…
+                                + Add operations site…
                               </SelectItem>
                             )}
                           </SelectContent>
@@ -768,6 +775,8 @@ export default function Processing() {
             if (!open) setFacilityTargetLineId(null);
           }}
           defaultCountry={client?.country ?? "India"}
+          defaultPurpose="operations"
+          lockPurpose
           clientName={client?.name}
           onCreated={(facility) => {
             if (facilityTargetLineId) {

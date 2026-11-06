@@ -1,14 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ArrowRight, ArrowLeft, Check } from "lucide-react";
 import { OnboardingShell } from "@/components/onboarding-shell";
 import { Button } from "@/components/ui/button";
 import { INDUSTRIES } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/hooks/use-auth";
 
 export default function OnboardingIndustry() {
   const [, setLocation] = useLocation();
+  const userType = useAuthStore((s) => s.user?.userType);
+  const smeSolo = useAuthStore((s) => s.tenant?.smeSolo);
+  const isSme = userType === "sme" || Boolean(smeSolo);
   const [selected, setSelected] = useState<string[]>(["it-ites", "manufacturing", "pharma"]);
+
+  useEffect(() => {
+    if (isSme) setLocation("/onboarding/data-sources");
+  }, [isSme, setLocation]);
 
   const toggle = (id: string) => {
     setSelected((cur) => (cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id]));

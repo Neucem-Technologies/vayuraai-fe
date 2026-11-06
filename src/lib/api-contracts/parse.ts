@@ -78,6 +78,12 @@ const tenantSchema = z.object({
   reportFooterDisclaimer: z.string().default(''),
   reportLogoPlacement: reportLogoPlacementSchema.default('header_left'),
   hasReportLogo: z.boolean().default(false),
+  listed: z.boolean().default(false),
+  listingBio: z.string().default(''),
+  smeSolo: z.boolean().default(false),
+  subscriptionStatus: z.enum(['none', 'trialing', 'active', 'past_due', 'canceled']).default('none'),
+  billingInterval: z.enum(['monthly', 'yearly']).nullable().default(null),
+  paidAt: z.string().nullable().default(null),
 });
 
 export const meProfileSchema = z.object({

@@ -23,18 +23,36 @@ export function isVerifier(profile: MeProfile): boolean {
   return profile.access.kind === 'verifier';
 }
 
+export function needsBilling(profile: MeProfile): boolean {
+  if (isClientViewer(profile) || isVerifier(profile)) return false;
+  if (!profile.tenant) return false;
+  const status = profile.tenant.subscriptionStatus;
+  return status === 'none' || status === 'canceled' || status === 'past_due';
+}
+
 export function resolvePostLoginPath(
   profile: MeProfile,
   onboardingComplete: boolean,
-): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' {
+): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' | '/billing' {
   if (isVerifier(profile)) {
     return '/verifier';
   }
   if (isClientViewer(profile)) {
     return '/client/dashboard';
   }
-  if (getUserType(profile) === 'sme') {
-    return onboardingComplete ? '/dashboard' : '/onboarding/organization';
+  // Workspace must exist before checkout (created in organisation onboarding).
+  if (!profile.tenant) {
+    return '/onboarding/organization';
   }
-  return onboardingComplete ? '/clients' : '/onboarding/organization';
+  if (needsBilling(profile)) {
+    return '/billing';
+  }
+  if (!onboardingComplete) {
+    // Organisation step already created the tenant; continue the rest of setup.
+    return getUserType(profile) === 'sme' ? '/onboarding/data-sources' : '/onboarding/industry';
+  }
+  if (getUserType(profile) === 'sme') {
+    return '/dashboard';
+  }
+  return '/clients';
 }

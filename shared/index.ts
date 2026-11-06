@@ -8,3 +8,6 @@ export * from './client.js';
 export * from './consultant.js';
 export * from './profile.js';
 export * from './reports.js';
+export * from './offsets.js';
+export * from './consultants.js';
+export * from './billing.js';

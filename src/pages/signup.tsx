@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { Link, useLocation, useSearch } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "@/hooks/use-toast";
 import { Cloud, ArrowRight, Briefcase, Building2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
 import type { UserType } from "@vayura/api-contracts/common";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
-import { AuthSplitLayout, type SignupAudience } from "@/components/auth-split-layout";
+import { AuthSplitLayout } from "@/components/auth-split-layout";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Full name is required"),
@@ -32,15 +32,15 @@ const signupSchema = z.object({
 
 export default function Signup() {
   const [, setLocation] = useLocation();
-  const search = useSearch();
   const establishSessionFromLogin = useAuthStore((state) => state.establishSessionFromLogin);
   const [isLoading, setIsLoading] = useState(false);
-  const [accountType, setAccountType] = useState<SignupAudience>("consultant");
-
-  useEffect(() => {
-    const requested = new URLSearchParams(search).get("as");
-    if (requested === "consultant" || requested === "sme") setAccountType(requested);
-  }, [search]);
+  const accountParam =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("account")
+      : null;
+  const [accountType, setAccountType] = useState<Exclude<UserType, "verifier">>(
+    accountParam === "sme" ? "sme" : "consultant",
+  );
 
   const form = useForm<z.infer<typeof signupSchema>>({
     resolver: zodResolver(signupSchema),
@@ -55,7 +55,14 @@ export default function Signup() {
   async function onSubmit(values: z.infer<typeof signupSchema>) {
     setIsLoading(true);
     try {
-      await authApi.register(values.email, values.password, accountType);
+      await authApi.register(values.email, values.password, accountType, values.fullName);
+      if (values.companyName.trim()) {
+        try {
+          sessionStorage.setItem('vayura_signup_company', values.companyName.trim());
+        } catch {
+          /* ignore */
+        }
+      }
       const data = await authApi.login(values.email, values.password);
       const profile = await establishSessionFromLogin(data.user);
       await new Promise((resolve) => setTimeout(resolve, 800));
@@ -74,7 +81,7 @@ export default function Signup() {
   }
 
   return (
-    <AuthSplitLayout audience={accountType} onChooseAudience={setAccountType}>
+    <AuthSplitLayout>
       <div className="flex items-center gap-2 mb-8">
         <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
           <Cloud className="text-primary-foreground w-6 h-6" />
@@ -103,7 +110,7 @@ export default function Signup() {
           data-testid="signup-toggle-consultant"
         >
           <Briefcase className="w-3.5 h-3.5" />
-          Open a practice
+          Consultant
         </button>
         <button
           type="button"
@@ -117,14 +124,14 @@ export default function Signup() {
           data-testid="signup-toggle-sme"
         >
           <Building2 className="w-3.5 h-3.5" />
-          One company
+          Business
         </button>
       </div>
 
       <p className="mt-2 text-xs text-muted-foreground text-center">
         {accountType === "consultant"
           ? "Consulting team — manage your full client portfolio"
-          : "Client contact — view and contribute to your organisation's data"}
+          : "Business — run carbon accounting and reports for your organisation"}
       </p>
 
       <div className="mt-6">

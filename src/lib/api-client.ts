@@ -37,16 +37,27 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const json: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const err = json as Partial<ApiErrorBody> | null;
-    const code = err?.error?.code ?? (res.status === 401 ? 'UNAUTHORIZED' : 'UNKNOWN');
+    const code =
+      err?.error?.code ??
+      (res.status === 401 ? 'UNAUTHORIZED' : res.status === 402 ? 'PAYMENT_REQUIRED' : 'UNKNOWN');
+    if (res.status === 402 && typeof window !== 'undefined') {
+      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+      const billingPath = `${base}/billing`.replace(/([^:]\/)\/+/g, '$1');
+      if (!window.location.pathname.endsWith('/billing')) {
+        window.location.assign(billingPath);
+      }
+    }
     const message =
       err?.error?.message ??
       (res.status === 409
         ? 'This resource already exists.'
         : res.status === 401
           ? 'You are not authorized to perform this action.'
-          : res.status >= 500
-            ? 'Something went wrong on our side. Please try again in a moment.'
-            : res.statusText || 'Request failed.');
+          : res.status === 402
+            ? 'Complete subscription billing before using this workspace.'
+            : res.status >= 500
+              ? 'Something went wrong on our side. Please try again in a moment.'
+              : res.statusText || 'Request failed.');
     throw new ApiRequestError(res.status, code, message);
   }
   const body = json as ApiSuccess<T> | null;

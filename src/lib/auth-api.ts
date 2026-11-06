@@ -20,10 +20,16 @@ export async function register(
   email: string,
   password: string,
   userType: UserType = 'consultant',
+  fullName?: string,
 ): Promise<AuthRegisterResponse> {
   return apiFetch<AuthRegisterResponse>('/api/v1/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ email, password, userType }),
+    body: JSON.stringify({
+      email,
+      password,
+      userType,
+      ...(fullName?.trim() ? { fullName: fullName.trim() } : {}),
+    }),
   });
 }
 

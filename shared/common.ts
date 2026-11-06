@@ -9,6 +9,8 @@ export type ConsolidationApproach = 'operational' | 'financial' | 'equity';
 /** Operations consume energy; generation/offset sites produce it (solar, wind, captive power). */
 export type FacilityPurpose = 'operations' | 'generation';
 export type TenantPlan = 'starter' | 'growth' | 'professional' | 'enterprise';
+export type SubscriptionStatus = 'none' | 'trialing' | 'active' | 'past_due' | 'canceled';
+export type BillingInterval = 'monthly' | 'yearly';
 export type TenantRole = 'consultant_admin' | 'consultant_member';
 export type OrgRole = 'client_viewer' | 'client_contributor';
 

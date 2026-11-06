@@ -53,6 +53,7 @@ export default function SettingsOrganization() {
   const { data: facilities, isLoading } = useFacilities(orgId);
   const { data: organisation } = useOrganisation(orgId);
   const canEnableClientPortal = useAuthStore((s) => s.access?.canEnableClientPortal ?? false);
+  const isSme = useAuthStore((s) => s.user?.userType === "sme" || Boolean(s.tenant?.smeSolo));
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [addPurpose, setAddPurpose] = useState<FacilityPurpose>("operations");
@@ -132,7 +133,7 @@ export default function SettingsOrganization() {
         await queryClient.invalidateQueries({ queryKey: ["client", orgId] });
         await queryClient.invalidateQueries({ queryKey: ["organisation", orgId] });
       }
-      toast({ title: "Client profile saved" });
+      toast({ title: isSme ? "Organisation saved" : "Client profile saved" });
     },
     onError: (e) => {
       const message = e instanceof ApiRequestError ? e.message : "Could not save client profile.";
@@ -146,7 +147,7 @@ export default function SettingsOrganization() {
       return deleteFacility(orgId, facilityId);
     },
     onSuccess: async () => {
-      if (orgId) await queryClient.invalidateQueries({ queryKey: ["facilities", orgId] });
+      await queryClient.invalidateQueries({ queryKey: ["facilities"] });
       toast({ title: "Facility removed" });
     },
     onError: (e) => {
@@ -179,8 +180,12 @@ export default function SettingsOrganization() {
   return (
     <>
       <PageHeader
-        title="Client profile"
-        subtitle={`Legal entity, reporting boundary, operations, and generation / offset sites for ${clientName}`}
+        title={isSme ? "My organisation" : "Client profile"}
+        subtitle={
+          isSme
+            ? `Legal entity, reporting boundary, facilities, and generation / offset sites for ${clientName}`
+            : `Legal entity, reporting boundary, operations, and generation / offset sites for ${clientName}`
+        }
         actions={
           activeClient && (
             <Badge variant="outline" className={statusBadgeClass(activeClient.status)}>
@@ -341,7 +346,9 @@ export default function SettingsOrganization() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base">Operations</CardTitle>
-              <CardDescription>Offices, plants, and other sites that consume energy</CardDescription>
+              <CardDescription>
+                Offices, plants, and other sites that consume energy. These appear in upload assignment and report boundaries.
+              </CardDescription>
             </div>
             <Button
               size="sm"
@@ -440,6 +447,7 @@ export default function SettingsOrganization() {
           defaultPurpose={addPurpose}
           clientName={clientName}
           onCreated={async () => {
+            await queryClient.invalidateQueries({ queryKey: ["facilities"] });
             await queryClient.invalidateQueries({ queryKey: ["clients"] });
             await queryClient.invalidateQueries({ queryKey: ["client", orgId] });
           }}

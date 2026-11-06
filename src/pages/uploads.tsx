@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { useLocation } from "wouter";
+import { useMemo, useState, useRef } from "react";
+import { Link, useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload as UploadIcon,
@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Eye,
   AlertTriangle,
+  MapPin,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -63,7 +64,11 @@ import { useUploads, useFacilities } from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { fetchUploadContent, uploadDocuments } from "@/lib/uploads-api";
 import { isSpreadsheetFile } from "@/lib/is-spreadsheet";
-import { ORGANISATION_WIDE_FACILITY } from "@/lib/facilities";
+import {
+  ORGANISATION_WIDE_FACILITY,
+  displayFacility,
+  operationalFacilities,
+} from "@/lib/facilities";
 import { ApiRequestError } from "@/lib/api-client";
 import {
   dedupeFilesInBatch,
@@ -203,9 +208,11 @@ export default function Uploads() {
     },
   });
 
+  const operationSites = useMemo(() => operationalFacilities(orgFacilities), [orgFacilities]);
   const facilities = Array.from(
     new Set([
-      ...orgFacilities.map((f) => f.name),
+      ORGANISATION_WIDE_FACILITY,
+      ...operationSites.map((f) => f.name),
       ...(uploads ?? []).map((u) => u.facility),
     ].filter((name) => name && name !== "—")),
   );
@@ -280,7 +287,7 @@ export default function Uploads() {
     <>
       <PageHeader
         title="Uploads"
-        subtitle="Send invoices, statements, and exports to Vayura — we'll extract activity data and apply the right emission factors."
+        subtitle="Assign each file to a site in your reporting boundary, then Vayura extracts activity data and emission factors."
         actions={
           <Button onClick={() => inputRef.current?.click()}>
             <UploadIcon className="w-4 h-4 mr-2" />
@@ -297,6 +304,56 @@ export default function Uploads() {
         accept=".pdf,.xlsx,.xls,.csv,.tsv,.txt,.jpg,.jpeg,.png,.webp"
         onChange={(e) => handleFiles(e.target.files)}
       />
+
+      <Card className="mb-4">
+        <CardContent className="p-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <MapPin className="w-4 h-4 text-primary shrink-0" />
+              Reporting site for this upload
+            </div>
+            <Select
+              value={uploadFacility}
+              onValueChange={(value) => {
+                if (value === ADD_FACILITY_VALUE) {
+                  if (!orgId) return;
+                  setAddFacilityOpen(true);
+                  return;
+                }
+                setUploadFacility(value);
+              }}
+            >
+              <SelectTrigger className="h-9 max-w-md" data-testid="select-upload-facility">
+                <SelectValue placeholder="Select site" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ORGANISATION_WIDE_FACILITY}>
+                  Organisation-wide (shared / SaaS)
+                </SelectItem>
+                {operationSites.map((f) => (
+                  <SelectItem key={f.id} value={f.name}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+                {orgId && (
+                  <SelectItem value={ADD_FACILITY_VALUE}>+ Add operations site…</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Operations sites only. Generation / offset sites are managed separately and are not used for inventory uploads.{" "}
+              <Link href="/settings/organization" className="underline underline-offset-2">
+                Manage sites
+              </Link>
+            </p>
+            {operationSites.length === 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                No operations sites yet — add one, or keep Organisation-wide for shared services.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card
         className={cn(
@@ -318,41 +375,12 @@ export default function Uploads() {
           <h3 className="text-base font-medium text-foreground">Drop files here or click to browse</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-lg">
             PDF invoices, Excel, CSV, or text exports in your own column layout, and invoice photos. Up to 25 MB.
+            Files will be tagged to <span className="font-medium text-foreground">{uploadFacility}</span>.
           </p>
           {stagedFiles.length > 0 && (
               <div className="mt-4 w-full max-w-md text-left space-y-3">
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1.5">Assign to facility</div>
-                <Select
-                  value={uploadFacility}
-                  onValueChange={(value) => {
-                    if (value === ADD_FACILITY_VALUE) {
-                      if (!orgId) return;
-                      setAddFacilityOpen(true);
-                      return;
-                    }
-                    setUploadFacility(value);
-                  }}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select facility" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ORGANISATION_WIDE_FACILITY}>{ORGANISATION_WIDE_FACILITY}</SelectItem>
-                    {orgFacilities.map((f) => (
-                      <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
-                    ))}
-                    {orgId && (
-                      <SelectItem value={ADD_FACILITY_VALUE}>+ Add facility…</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  SaaS invoices (e.g. Cursor) default to organisation-wide unless you pick a site.
-                </p>
-              </div>
               <div className="text-xs font-medium text-muted-foreground">
-                {stagedFiles.length} file(s) ready to upload
+                {stagedFiles.length} file(s) ready to upload → {uploadFacility}
               </div>
               {batchSkipped.length > 0 && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
@@ -549,7 +577,7 @@ export default function Uploads() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">{u.facility}</TableCell>
+                    <TableCell className="text-sm">{displayFacility(u.facility)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{u.category}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{u.uploadedBy}</TableCell>
                     <TableCell className="text-sm text-muted-foreground tabular-nums">{formatPeriod(u.periodStart, u.periodEnd)}</TableCell>
@@ -609,6 +637,8 @@ export default function Uploads() {
           orgId={orgId}
           open={addFacilityOpen}
           onOpenChange={setAddFacilityOpen}
+          defaultPurpose="operations"
+          lockPurpose
           onCreated={(facility) => setUploadFacility(facility.name)}
         />
       )}

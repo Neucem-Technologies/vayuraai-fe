@@ -70,14 +70,24 @@ export default function OnboardingDataSources() {
   const queryClient = useQueryClient();
   const completeOnboarding = useAuthStore((s) => s.completeOnboarding);
   const refreshSession = useAuthStore((s) => s.refreshSession);
+  const userType = useAuthStore((s) => s.user?.userType);
   const tenant = useTenant();
+  const isSme = userType === "sme" || Boolean(tenant?.smeSolo);
   const setActiveClient = useActiveClientStore((s) => s.setActiveClient);
   const [isFinishing, setIsFinishing] = useState(false);
+
+  const signupCompany = (() => {
+    try {
+      return sessionStorage.getItem("vayura_signup_company") ?? "";
+    } catch {
+      return "";
+    }
+  })();
 
   const form = useForm<FormVals>({
     resolver: zodResolver(schema),
     defaultValues: {
-      legalName: "",
+      legalName: signupCompany,
       shortName: "",
       industry: "",
       country: "India",
@@ -92,9 +102,14 @@ export default function OnboardingDataSources() {
     if (tenant) return;
     void refreshSession().then(() => {
       if (!useAuthStore.getState().tenant) {
+        const sme =
+          useAuthStore.getState().user?.userType === "sme" ||
+          Boolean(useAuthStore.getState().tenant?.smeSolo);
         toast({
-          title: "Firm setup required",
-          description: "Create your consulting firm workspace before adding a client.",
+          title: sme ? "Workspace setup required" : "Firm setup required",
+          description: sme
+            ? "Create your business workspace before adding your organisation."
+            : "Create your consulting firm workspace before adding a client.",
           variant: "destructive",
         });
         setLocation("/onboarding/organization");
@@ -105,8 +120,10 @@ export default function OnboardingDataSources() {
   const finish = async (values: FormVals) => {
     if (!useAuthStore.getState().tenant) {
       toast({
-        title: "Firm setup required",
-        description: "Create your consulting firm workspace before adding a client.",
+        title: isSme ? "Workspace setup required" : "Firm setup required",
+        description: isSme
+          ? "Create your business workspace before adding your organisation."
+          : "Create your consulting firm workspace before adding a client.",
         variant: "destructive",
       });
       setLocation("/onboarding/organization");
@@ -147,6 +164,11 @@ export default function OnboardingDataSources() {
       }
 
       await completeOnboarding();
+      try {
+        sessionStorage.removeItem("vayura_signup_company");
+      } catch {
+        /* ignore */
+      }
       await refreshSession();
       await queryClient.invalidateQueries({ queryKey: ["clients"] });
       await queryClient.invalidateQueries({ queryKey: ["facilities", org.id] });
@@ -154,14 +176,31 @@ export default function OnboardingDataSources() {
       setLocation("/dashboard");
     } catch (e) {
       const message =
-        e instanceof ApiRequestError ? e.message : "Could not create client organisation.";
-      toast({ title: "Could not add client", description: message, variant: "destructive" });
+        e instanceof ApiRequestError
+          ? e.message
+          : isSme
+            ? "Could not create your organisation."
+            : "Could not create client organisation.";
+      toast({
+        title: isSme ? "Could not create organisation" : "Could not add client",
+        description: message,
+        variant: "destructive",
+      });
     } finally {
       setIsFinishing(false);
     }
   };
 
   const skip = async () => {
+    // SME must create their one organisation — skipping leaves dashboard in a redirect loop.
+    if (isSme) {
+      toast({
+        title: "Organisation required",
+        description: "Add your organisation details to finish setup.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsFinishing(true);
     try {
       await completeOnboarding();
@@ -174,8 +213,12 @@ export default function OnboardingDataSources() {
   return (
     <OnboardingShell
       step={3}
-      title="Add your first client"
-      subtitle="Create a client organisation and optionally its first facility. You can add more anytime from Client profile or Uploads."
+      title={isSme ? "Add your organisation" : "Add your first client"}
+      subtitle={
+        isSme
+          ? "Create your organisation profile and optionally its first facility. You can upload bills and prepare reports next."
+          : "Create a client organisation and optionally its first facility. You can add more anytime from Client profile or Uploads."
+      }
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(finish)} className="space-y-6">
@@ -185,7 +228,7 @@ export default function OnboardingDataSources() {
               name="legalName"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
-                  <FormLabel>Client legal name</FormLabel>
+                  <FormLabel>{isSme ? "Legal name" : "Client legal name"}</FormLabel>
                   <FormControl><Input {...field} data-testid="input-client-name" /></FormControl>
                   <FormDescription>The legal entity that will appear on reports.</FormDescription>
                   <FormMessage />
@@ -301,16 +344,29 @@ export default function OnboardingDataSources() {
           </div>
 
           <div className="flex justify-between pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => setLocation("/onboarding/industry")} data-testid="button-back">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLocation(isSme ? "/onboarding/organization" : "/onboarding/industry")}
+              data-testid="button-back"
+            >
               <ArrowLeft className="mr-2 w-4 h-4" />
               Back
             </Button>
             <div className="flex gap-2">
-              <Button type="button" variant="ghost" onClick={skip} disabled={isFinishing} data-testid="button-skip">
-                Skip and explore
-              </Button>
+              {!isSme ? (
+                <Button type="button" variant="ghost" onClick={skip} disabled={isFinishing} data-testid="button-skip">
+                  Skip and explore
+                </Button>
+              ) : null}
               <Button type="submit" disabled={isFinishing} data-testid="button-finish">
-                {isFinishing ? "Creating client..." : "Add client and continue"}
+                {isFinishing
+                  ? isSme
+                    ? "Creating organisation..."
+                    : "Creating client..."
+                  : isSme
+                    ? "Create organisation and continue"
+                    : "Add client and continue"}
                 <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
             </div>

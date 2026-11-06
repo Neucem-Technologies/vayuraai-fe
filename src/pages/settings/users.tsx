@@ -42,11 +42,6 @@ import { ApiRequestError } from "@/lib/api-client";
 import { toast } from "sonner";
 import type { TenantRole } from "@vayura/api-contracts/common";
 
-const ROLE_LABEL: Record<TenantRole, string> = {
-  consultant_admin: "Administrator",
-  consultant_member: "Member",
-};
-
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-IN", {
@@ -75,6 +70,9 @@ export default function SettingsUsers() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<TenantRole>("consultant_member");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
+  const adminLabel = "Administrator";
+  const memberLabel = isSme ? "Contributor" : "Member";
 
   const members = useQuery({
     queryKey: ["team-members", tenant?.id],
@@ -124,7 +122,7 @@ export default function SettingsUsers() {
     mutationFn: removeTeamMember,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["team-members"] });
-      toast.success("Removed from the firm");
+      toast.success(isSme ? "Removed from the workspace" : "Removed from the firm");
     },
     onError: (e) => {
       toast.error("Could not remove member", {
@@ -136,13 +134,17 @@ export default function SettingsUsers() {
   return (
     <>
       <PageHeader
-        title="Firm team"
-        subtitle={`Consultants at ${tenant?.name ?? "your firm"}. Roles and client assignments come from the workspace.`}
+        title={isSme ? "Team & access" : "Firm team"}
+        subtitle={
+          isSme
+            ? `People who can upload, review, and approve emissions data for ${tenant?.name ?? "your organisation"}. Approvals use maker–checker when more than one person is on the team.`
+            : `Consultants at ${tenant?.name ?? "your firm"}. Roles and client assignments come from the workspace.`
+        }
         actions={
           isAdmin ? (
             <Button onClick={() => setOpen(true)} data-testid="button-invite-user">
               <UserPlus className="w-4 h-4 mr-2" />
-              Invite consultant
+              {isSme ? "Invite teammate" : "Invite consultant"}
             </Button>
           ) : null
         }
@@ -154,9 +156,9 @@ export default function SettingsUsers() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Consultant</TableHead>
+                  <TableHead>{isSme ? "Person" : "Consultant"}</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Clients assigned</TableHead>
+                  {!isSme && <TableHead>Clients assigned</TableHead>}
                   <TableHead>Status</TableHead>
                   <TableHead>Last sign-in</TableHead>
                   <TableHead className="w-[60px]" />
@@ -166,14 +168,14 @@ export default function SettingsUsers() {
                 {members.isLoading &&
                   Array.from({ length: 4 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={6}>
+                      <TableCell colSpan={isSme ? 5 : 6}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))}
                 {!members.isLoading && members.data?.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-sm text-muted-foreground">
+                    <TableCell colSpan={isSme ? 5 : 6} className="text-sm text-muted-foreground">
                       No team members yet.
                     </TableCell>
                   </TableRow>
@@ -203,17 +205,21 @@ export default function SettingsUsers() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="consultant_admin">Administrator</SelectItem>
-                            <SelectItem value="consultant_member">Member</SelectItem>
+                            <SelectItem value="consultant_admin">{adminLabel}</SelectItem>
+                            <SelectItem value="consultant_member">{memberLabel}</SelectItem>
                           </SelectContent>
                         </Select>
                       ) : (
-                        <span className="text-sm">{ROLE_LABEL[member.role]}</span>
+                        <span className="text-sm">
+                          {member.role === "consultant_admin" ? adminLabel : memberLabel}
+                        </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm tabular-nums">
-                      {member.clientsAssigned === null ? "—" : member.clientsAssigned}
-                    </TableCell>
+                    {!isSme && (
+                      <TableCell className="text-sm tabular-nums">
+                        {member.clientsAssigned === null ? "—" : member.clientsAssigned}
+                      </TableCell>
+                    )}
                     <TableCell className="text-sm capitalize">{member.status}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {member.status === "invited" ? "Invite pending" : formatWhen(member.lastActiveAt)}
@@ -231,7 +237,11 @@ export default function SettingsUsers() {
                               className="text-destructive"
                               onClick={() => remove.mutate(member.id)}
                             >
-                              {member.status === "invited" ? "Cancel invite" : "Remove from firm"}
+                              {member.status === "invited"
+                                ? "Cancel invite"
+                                : isSme
+                                  ? "Remove from workspace"
+                                  : "Remove from firm"}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -248,19 +258,27 @@ export default function SettingsUsers() {
       <Card className="mt-4">
         <CardHeader>
           <CardTitle className="text-base">Roles</CardTitle>
-          <CardDescription>What each firm role can do. Client viewers are managed per organisation.</CardDescription>
+          <CardDescription>
+            {isSme
+              ? "Administrators manage billing and team access. Contributors upload and review; they cannot approve their own uploads when another teammate is available."
+              : "What each firm role can do. Client viewers are managed per organisation."}
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
           <div>
-            <div className="font-medium">Administrator</div>
+            <div className="font-medium">{adminLabel}</div>
             <p className="text-muted-foreground mt-1">
-              Firm profile, plan, branding, team, every client, and client-portal invites.
+              {isSme
+                ? "Organisation profile, plan, team invites, period reopen, and verifier onboarding."
+                : "Firm profile, plan, branding, team, every client, and client-portal invites."}
             </p>
           </div>
           <div>
-            <div className="font-medium">Member</div>
+            <div className="font-medium">{memberLabel}</div>
             <p className="text-muted-foreground mt-1">
-              Uploads, review, and reports for the client organisations they are assigned to.
+              {isSme
+                ? "Uploads, review, reports, and offsets for your organisation."
+                : "Uploads, review, and reports for the client organisations they are assigned to."}
             </p>
           </div>
         </CardContent>
@@ -269,7 +287,7 @@ export default function SettingsUsers() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite a consultant</DialogTitle>
+            <DialogTitle>{isSme ? "Invite a teammate" : "Invite a consultant"}</DialogTitle>
             <DialogDescription>
               They get a one-time link, valid for 48 hours, to set a password and join {tenant?.name}.
             </DialogDescription>
@@ -286,7 +304,7 @@ export default function SettingsUsers() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="consultant@firm.com"
+                placeholder={isSme ? "finance@company.com" : "consultant@firm.com"}
               />
             </div>
             <div>
@@ -296,8 +314,8 @@ export default function SettingsUsers() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="consultant_member">Member</SelectItem>
-                  <SelectItem value="consultant_admin">Administrator</SelectItem>
+                  <SelectItem value="consultant_member">{memberLabel}</SelectItem>
+                  <SelectItem value="consultant_admin">{adminLabel}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

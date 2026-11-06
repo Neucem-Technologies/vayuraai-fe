@@ -25,7 +25,7 @@ const LEGACY_TOKEN_KEY = 'vayura_access_token';
 const USER_TYPE_KEY = 'vayura_user_type';
 
 function makeFallbackProfileFromLogin(user: { id: string; email: string; userType: UserType }): MeProfile {
-  const kind = user.userType === 'sme' ? 'client_viewer' : user.userType === 'verifier' ? 'verifier' : 'consultant';
+  const kind = user.userType === 'verifier' ? 'verifier' : 'consultant';
   return {
     user: {
       id: user.id,
