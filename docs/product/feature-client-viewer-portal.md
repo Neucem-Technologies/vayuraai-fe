@@ -1,15 +1,24 @@
 # Feature: Client Viewer Portal — Read-Only Client Access
 
-**Status:** Planned (not implemented)  
+**Status:** Shipped on `dev` (Nov 2026)  
 **Related:** [Product requirements](./requirements.md) · [Frontend development plan](../development-plan.md) · [Backend development plan](../../../vayura-backend/docs/development-plan.md)
+
+### As-built notes (read this first)
+
+- Access is resolved as `access.kind === 'client_viewer'` (org membership), not a single global `User.role`.  
+- Consulting firms only — **SME solo** tenants cannot invite client viewers (`blockSmeSolo` on consultant invite APIs).  
+- Plan gate: Growth+ via `canEnableClientPortal`.  
+- UI: `/client/dashboard`, `/client/reports`; API: `/api/v1/client/*` + firm invite/revoke under `/api/v1/consultant/...`.  
+- Downloads use session-authenticated client download routes (and shared download-grant patterns elsewhere).  
+- Sections below remain the product intent / checklist; prefer live routes over outdated “prerequisite” language.
 
 ---
 
 ## 1. Context
 
-Vayura is a **multi-tenant** carbon accounting platform. The primary user is a **consultant** who manages **multiple client organisations**. Each client organisation is a company that may need to submit **BRSR**, **GRI**, or similar disclosures.
+Vayura is a **multi-tenant** carbon accounting platform. The primary operator is a **consultant** who manages **multiple client organisations** (SME solo workspaces are separate and do not use this portal). Each client organisation may need **BRSR**, **GRI**, or similar disclosures.
 
-Today the product skews toward consultant-only access. This feature adds a **`client_viewer`** role: a **read-only** login for the **end-client company** so they can view their emissions summaries and download **their** reports without asking the consultant for every query.
+This feature adds a **`client_viewer`** access kind: a **read-only** login for the **end-client company** so they can view emissions summaries and download **their** reports without asking the consultant for every query.
 
 **Implementation stack note:** This repository uses **Node + Express + TypeScript**, **Prisma + PostgreSQL**, and a **Vite + React** frontend. Pseudocode in the original prompt referenced Python middleware and generic `users` / `organizations` SQL—translate those ideas into **Express route middleware**, **Prisma models**, and **Zod-validated** request bodies. **Row Level Security (RLS)** is optional but recommended once `org_id` is threaded per request; until then, **every query must filter by `org_id` from the authenticated session** (never trust client-supplied `org_id` for `client_viewer`).
 
@@ -175,4 +184,4 @@ When implementing, split work into trackable PRs, for example:
 
 ---
 
-*Last updated: aligned to Vayura monorepo docs; original prompt preserved in intent, adapted to Express/Prisma/React.*
+*Last updated: Nov 2026 — marked shipped; as-built notes added. Spec body kept for intent/checklist.*

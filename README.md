@@ -87,8 +87,10 @@ See `CONTRIBUTING.md`.
 
 ## Docs
 
+- `docs/product/requirements.md` — **product details + flows** (start here)
+- `docs/development-plan.md` — module status / next work
+- `docs/product/feature-client-viewer-portal.md` — client portal reference
 - `docs/frontend-architecture.md`
 - `docs/frontend-development-process.md`
-- `docs/product/` — product / UX notes
 
 Keep `shared/` contracts in sync with `vayura-backend/shared` when API shapes change.

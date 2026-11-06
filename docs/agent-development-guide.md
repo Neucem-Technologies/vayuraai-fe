@@ -23,9 +23,10 @@
 
 ## 1. Product context (short)
 
-- **Multi-tenant:** consulting **tenant (firm)** → many **client organisations**.
-- **Users:** consultants (`consultant` / future `consultant_admin` | `consultant_member`) and optional **client SMEs** (`sme`); future **`client_viewer`** read-only role per spec.
-- **MVP path:** auth → tenancy/orgs → ingestion → emissions → reports → (later) client viewer portal.
+- **Multi-tenant:** consulting **tenant (firm)** → many **client organisations**; **SME solo** = one-org company workspace (`Tenant.smeSolo`).
+- **Access kinds:** `consultant` | `client_viewer` | `verifier` (see `access-context.service.ts`). Tenant roles: `consultant_admin` | `consultant_member`.
+- **Shipped path:** auth → tenancy → billing (402 gate) → facilities → ingestion/workers → review → emissions → reports → controls/assurance → client portal + verifiers.
+- **Product details / flows:** `vayura-frontend/docs/product/requirements.md`.
 
 ---
 
@@ -232,10 +233,13 @@ npm run dev            # http://localhost:5173
 | Area | Status |
 |------|--------|
 | Foundation, health, env | Done |
-| Auth register/login/session/onboarding | Done (branch `feat/sign-in-flow`) |
-| Tenancy, orgs, roles (`consultant_admin`, etc.) | Planned |
-| Ingestion, processing, reporting | Planned |
-| Client viewer portal | Spec only — `vayura-frontend/docs/product/feature-client-viewer-portal.md` |
+| Auth register/login/session/onboarding | Done |
+| Tenancy, orgs, roles, RLS, SME solo | Done |
+| Billing (Razorpay + local bypass + 402) | Done |
+| Ingestion, workers, processing, reporting | Done |
+| Facilities boundaries, ERP controls, assurance | Done |
+| Client viewer portal + verifiers | Done — see `vayura-frontend/docs/product/feature-client-viewer-portal.md` |
+| Phase 2 ML / marketplace / SSO | Roadmap — not implemented |
 
 ---
 
@@ -243,7 +247,7 @@ npm run dev            # http://localhost:5173
 
 - Do not use Ant Design on frontend (stack is Tailwind + shadcn-style `components/ui`).
 - Do not return HTML errors from API; always JSON contract above.
-- Do not expose `org_id` from request body for `client_viewer` sessions (future); use JWT claims only.
+- Do not expose `org_id` from request body for `client_viewer` sessions; resolve org from server access context only.
 - Do not skip updating `auth-errors.ts` (or equivalent) when adding new API error codes.
 - Do not use MongoDB/Mongoose; persistence is **PostgreSQL + Prisma** only.
 
