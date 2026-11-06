@@ -16,8 +16,9 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useAuthStore } from "@/hooks/use-auth";
+import { isSmeWorkspace, useAuthStore } from "@/hooks/use-auth";
 import * as authApi from "@/lib/auth-api";
+import { isUnpaidSubscriptionStatus } from "@vayura/api-contracts/billing";
 import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
@@ -45,14 +46,16 @@ export default function Login() {
       setLocation("/client/dashboard");
       return;
     }
-    const status = tenant?.subscriptionStatus;
-    if (status === "none" || status === "canceled" || status === "past_due") {
+    if (isUnpaidSubscriptionStatus(tenant?.subscriptionStatus)) {
       setLocation("/billing");
       return;
     }
-    const smeSolo = Boolean(tenant?.smeSolo) || user?.userType === "sme";
     setLocation(
-      completed ? (smeSolo ? "/dashboard" : "/clients") : "/onboarding/organization",
+      completed
+        ? isSmeWorkspace(user?.userType, tenant)
+          ? "/dashboard"
+          : "/clients"
+        : "/onboarding/organization",
     );
   }, [authHydrated, isAuthenticated, onboardingComplete, setLocation]);
 

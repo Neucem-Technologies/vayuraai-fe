@@ -1,5 +1,6 @@
 import type { MeProfile } from './auth.js';
 import type { AccessKind, UserType } from './common.js';
+import { isUnpaidSubscriptionStatus } from './billing.js';
 
 /** Workspace access mode — use for permissions and routing. */
 export function getAccessKind(profile: MeProfile): AccessKind {
@@ -26,8 +27,7 @@ export function isVerifier(profile: MeProfile): boolean {
 export function needsBilling(profile: MeProfile): boolean {
   if (isClientViewer(profile) || isVerifier(profile)) return false;
   if (!profile.tenant) return false;
-  const status = profile.tenant.subscriptionStatus;
-  return status === 'none' || status === 'canceled' || status === 'past_due';
+  return isUnpaidSubscriptionStatus(profile.tenant.subscriptionStatus);
 }
 
 export function resolvePostLoginPath(

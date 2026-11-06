@@ -1,4 +1,17 @@
-import type { BillingInterval, TenantPlan } from './common.js';
+import type { BillingInterval, SubscriptionStatus, TenantPlan } from './common.js';
+
+/** Statuses that block product APIs when BILLING_REQUIRED is on. */
+export const UNPAID_SUBSCRIPTION_STATUSES = ['none', 'canceled', 'past_due'] as const satisfies readonly SubscriptionStatus[];
+
+export function isUnpaidSubscriptionStatus(
+  status: string | null | undefined,
+): boolean {
+  return (
+    status === 'none' ||
+    status === 'canceled' ||
+    status === 'past_due'
+  );
+}
 
 export type BillingAudience = 'company' | 'consultant';
 

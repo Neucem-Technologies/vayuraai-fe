@@ -31,7 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useDashboardStats } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useIsSmeWorkspace } from "@/hooks/use-auth";
 import { formatEmissions } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
 
@@ -99,7 +99,7 @@ export default function Dashboard() {
   const activeClient = useActiveClient();
   const tenant = useAuthStore((s) => s.tenant);
   const user = useAuthStore((s) => s.user);
-  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
+  const isSme = useIsSmeWorkspace();
 
   if (isLoading || !data) {
     return (

@@ -3,11 +3,30 @@
  *
  * Inventory (uploads + reports) uses **operations** sites only.
  * Generation / offset sites are managed under Org settings and are not upload targets.
+ *
+ * Canonical type lists and purpose resolution live in `@vayura/api-contracts/facilities`.
  */
 import type { FacilityPurpose } from '@vayura/api-contracts/common';
+import {
+  FACILITY_TYPES,
+  GENERATION_FACILITY_TYPES,
+  OPERATION_FACILITY_TYPES,
+  ORGANISATION_WIDE_FACILITY,
+  isGenerationFacilityPurpose,
+  resolveFacilityPurpose,
+  typesForPurpose,
+} from '@vayura/api-contracts/facilities';
 
-/** Matches backend default for SaaS / shared services. */
-export const ORGANISATION_WIDE_FACILITY = 'Organisation-wide';
+export {
+  FACILITY_TYPES,
+  GENERATION_FACILITY_TYPES,
+  OPERATION_FACILITY_TYPES,
+  ORGANISATION_WIDE_FACILITY,
+  resolveFacilityPurpose,
+  typesForPurpose,
+};
+
+export type FacilityType = (typeof FACILITY_TYPES)[number];
 
 export type FacilityLike = {
   id: string;
@@ -16,63 +35,30 @@ export type FacilityLike = {
   type?: string;
 };
 
-export const OPERATION_FACILITY_TYPES = [
-  'Office',
-  'Manufacturing',
-  'Data Center',
-  'Warehouse',
-  'R&D',
-] as const;
-
-/** Sites that generate energy used to reduce residual / offset views — not a BRSR net-off. */
-export const GENERATION_FACILITY_TYPES = [
-  'Solar PV',
-  'Wind',
-  'Hydro',
-  'Captive power plant',
-  'Other generation',
-] as const;
-
-export const FACILITY_TYPES = [...OPERATION_FACILITY_TYPES, ...GENERATION_FACILITY_TYPES] as const;
-
-export type FacilityType = (typeof FACILITY_TYPES)[number];
-
-const GENERATION_TYPE_SET = new Set<string>(GENERATION_FACILITY_TYPES);
-
-export function typesForPurpose(purpose: FacilityPurpose): readonly string[] {
-  return purpose === 'generation' ? GENERATION_FACILITY_TYPES : OPERATION_FACILITY_TYPES;
-}
-
-export function resolveFacilityPurpose(
-  type: string,
-  purpose?: FacilityPurpose | null,
-): FacilityPurpose {
-  if (purpose === 'generation' || purpose === 'operations') return purpose;
-  return GENERATION_TYPE_SET.has(type) ? 'generation' : 'operations';
-}
-
 export function isGenerationFacility(purpose: FacilityPurpose | string | undefined): boolean {
-  return purpose === 'generation';
+  return isGenerationFacilityPurpose(purpose);
 }
 
 /** Sites that can receive activity data / report inventory boundaries. */
 export function operationalFacilities<T extends FacilityLike>(facilities: T[]): T[] {
-  return facilities.filter((f) => !isGenerationFacility(resolveFacilityPurpose(f.type ?? '', f.purpose)));
+  return facilities.filter(
+    (f) => !isGenerationFacility(resolveFacilityPurpose(f.type ?? '', f.purpose as FacilityPurpose | null)),
+  );
 }
 
 export function generationFacilities<T extends FacilityLike>(facilities: T[]): T[] {
-  return facilities.filter((f) => isGenerationFacility(resolveFacilityPurpose(f.type ?? '', f.purpose)));
+  return facilities.filter((f) =>
+    isGenerationFacility(resolveFacilityPurpose(f.type ?? '', f.purpose as FacilityPurpose | null)),
+  );
 }
 
 /** Normalize blank / unknown labels before save or display. */
 export function normalizeFacilityLabel(
   facility: string | undefined | null,
-  category?: string,
+  _category?: string,
 ): string {
   const trimmed = facility?.trim();
-  if (trimmed) return trimmed;
-  if (category === 'Purchased Services') return ORGANISATION_WIDE_FACILITY;
-  return ORGANISATION_WIDE_FACILITY;
+  return trimmed || ORGANISATION_WIDE_FACILITY;
 }
 
 export function displayFacility(facility: string | undefined | null, category?: string): string {

@@ -11,3 +11,5 @@ export * from './reports.js';
 export * from './offsets.js';
 export * from './consultants.js';
 export * from './billing.js';
+export * from './facilities.js';
+export * from './report-boundary.js';

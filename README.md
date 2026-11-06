@@ -14,6 +14,5 @@ Production-oriented frontend foundation for Vayura AI.
 - `npm run lint`
 
 ## Repo-Local Documentation
-- `docs/dev-handoff.md` (**start here** if you are new to billing / SME / controls / site boundaries)
 - `docs/frontend-architecture.md`
 - `docs/frontend-development-process.md`

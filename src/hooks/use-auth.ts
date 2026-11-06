@@ -323,3 +323,23 @@ export function useIsConsultantAdmin(): boolean {
 export function useTenant(): TenantDto | null {
   return useAuthStore((s) => s.tenant);
 }
+
+/** SME signup or solo company tenant — drives nav copy and portfolio hiding. */
+export function isSmeWorkspace(
+  userType?: UserType | null,
+  tenant?: Pick<TenantDto, 'smeSolo'> | null,
+): boolean {
+  return userType === 'sme' || Boolean(tenant?.smeSolo);
+}
+
+export function useIsSmeWorkspace(): boolean {
+  return useAuthStore((s) => isSmeWorkspace(s.user?.userType, s.tenant));
+}
+
+export function tenantMemberRoleLabel(
+  role: 'consultant_admin' | 'consultant_member',
+  sme: boolean,
+): string {
+  if (role === 'consultant_admin') return 'Administrator';
+  return sme ? 'Contributor' : 'Member';
+}

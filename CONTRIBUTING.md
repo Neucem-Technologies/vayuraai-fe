@@ -12,9 +12,6 @@
 3. Start Vite: `npm run dev` (default http://localhost:5173)
 4. Ensure the API has applied the latest Prisma migrations (billing / ERP)
 
-## Onboarding for new teammates
-Read **`docs/dev-handoff.md`** first — gates, SME vs firm chrome, controls, site boundaries.
-
 ## Quality bar before PR
 - `npm run build` passes
 - Loading/empty/error/success states covered

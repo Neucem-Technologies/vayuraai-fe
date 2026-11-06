@@ -5,10 +5,11 @@ import { queryClient } from "@/lib/query-client";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAuthStore, useIsClientViewer } from "@/hooks/use-auth";
+import { useAuthStore, useIsClientViewer, isSmeWorkspace } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { AppLayout } from "@/components/layout";
 import { ClientLayout } from "@/components/client-layout";
+import { isUnpaidSubscriptionStatus } from "@vayura/api-contracts/billing";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
@@ -48,8 +49,7 @@ import ClientReports from "@/pages/client/reports";
 
 /** SPA mirror of API requirePaidSubscription — unpaid workspaces stay on /billing. */
 function billingBlocked(): boolean {
-  const status = useAuthStore.getState().tenant?.subscriptionStatus;
-  return status === "none" || status === "canceled" || status === "past_due";
+  return isUnpaidSubscriptionStatus(useAuthStore.getState().tenant?.subscriptionStatus);
 }
 
 function ProtectedRoute({
@@ -97,8 +97,8 @@ function ProtectedRoute({
     return <Redirect to="/onboarding/organization" />;
   }
 
-  const smeSolo =
-    useAuthStore.getState().tenant?.smeSolo || useAuthStore.getState().user?.userType === "sme";
+  const { tenant, user } = useAuthStore.getState();
+  const smeSolo = isSmeWorkspace(user?.userType, tenant);
 
   if (consultantOnly && (access?.kind !== "consultant" || smeSolo)) {
     return <Redirect to="/dashboard" />;
@@ -118,7 +118,7 @@ function ProtectedRoute({
 
 function operatorHomePath(): "/dashboard" | "/clients" {
   const { tenant, user } = useAuthStore.getState();
-  return tenant?.smeSolo || user?.userType === "sme" ? "/dashboard" : "/clients";
+  return isSmeWorkspace(user?.userType, tenant) ? "/dashboard" : "/clients";
 }
 
 function ClientProtectedRoute({ component: Component }: { component: ComponentType }) {

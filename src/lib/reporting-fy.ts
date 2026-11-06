@@ -1,4 +1,6 @@
-const STORAGE_KEY = "vayura.reportingFyStartYear";
+/** Indian FY chrome (header selector + localStorage). Bounds helpers live in reporting-period.ts. */
+
+const STORAGE_KEY = 'vayura.reportingFyStartYear';
 
 /** Indian financial year starting April `startYear` (e.g. 2025 → FY 2025-26). */
 export type ReportingFy = {
@@ -27,7 +29,7 @@ export function listRecentFys(count = 5, now = new Date()): ReportingFy[] {
 }
 
 export function readStoredReportingFy(): ReportingFy {
-  const raw = typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+  const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
   const parsed = raw ? Number(raw) : NaN;
   if (Number.isFinite(parsed) && parsed >= 2000 && parsed <= 2100) {
     return fyFromStartYear(parsed);

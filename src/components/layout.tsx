@@ -20,7 +20,7 @@ import {
   UserSearch,
   ClipboardList,
 } from "lucide-react";
-import { useAuthStore, useTenant } from "@/hooks/use-auth";
+import { useAuthStore, useIsSmeWorkspace, useTenant } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { useClients } from "@/hooks/use-data";
 import {
@@ -55,7 +55,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [reportingFy, setReportingFy] = useState<ReportingFy>(() => readStoredReportingFy());
   const fyOptions = listRecentFys(5);
 
-  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
+  const isSme = useIsSmeWorkspace();
   const hidePortfolio = isSme;
 
   // Ensure an active organisation is selected once the list loads (consultant portfolio or SME solo).

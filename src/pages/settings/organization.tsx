@@ -27,7 +27,7 @@ import { AddFacilityDialog } from "@/components/add-facility-dialog";
 import { ClientPortalSettings } from "@/components/client-portal-settings";
 import { useFacilities, useOrganisation } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useIsSmeWorkspace } from "@/hooks/use-auth";
 import { deleteFacility } from "@/lib/facilities-api";
 import { isGenerationFacility } from "@/lib/facilities";
 import { updateOrganisation } from "@/lib/organisations-api";
@@ -53,7 +53,7 @@ export default function SettingsOrganization() {
   const { data: facilities, isLoading } = useFacilities(orgId);
   const { data: organisation } = useOrganisation(orgId);
   const canEnableClientPortal = useAuthStore((s) => s.access?.canEnableClientPortal ?? false);
-  const isSme = useAuthStore((s) => s.user?.userType === "sme" || Boolean(s.tenant?.smeSolo));
+  const isSme = useIsSmeWorkspace();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [addPurpose, setAddPurpose] = useState<FacilityPurpose>("operations");

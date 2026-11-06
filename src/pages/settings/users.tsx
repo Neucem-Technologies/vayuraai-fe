@@ -36,7 +36,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useAuthStore, useIsConsultantAdmin, useTenant } from "@/hooks/use-auth";
+import {
+  tenantMemberRoleLabel,
+  useAuthStore,
+  useIsConsultantAdmin,
+  useIsSmeWorkspace,
+  useTenant,
+} from "@/hooks/use-auth";
 import { inviteTeamMember, listTeamMembers, removeTeamMember, updateTeamMemberRole } from "@/lib/team-api";
 import { ApiRequestError } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -70,9 +76,9 @@ export default function SettingsUsers() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<TenantRole>("consultant_member");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const isSme = user?.userType === "sme" || Boolean(tenant?.smeSolo);
-  const adminLabel = "Administrator";
-  const memberLabel = isSme ? "Contributor" : "Member";
+  const isSme = useIsSmeWorkspace();
+  const adminLabel = tenantMemberRoleLabel("consultant_admin", isSme);
+  const memberLabel = tenantMemberRoleLabel("consultant_member", isSme);
 
   const members = useQuery({
     queryKey: ["team-members", tenant?.id],
@@ -210,9 +216,7 @@ export default function SettingsUsers() {
                           </SelectContent>
                         </Select>
                       ) : (
-                        <span className="text-sm">
-                          {member.role === "consultant_admin" ? adminLabel : memberLabel}
-                        </span>
+                        <span className="text-sm">{tenantMemberRoleLabel(member.role, isSme)}</span>
                       )}
                     </TableCell>
                     {!isSme && (

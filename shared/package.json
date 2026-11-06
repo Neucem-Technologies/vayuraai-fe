@@ -17,6 +17,8 @@
     "./reports": "./reports.ts",
     "./offsets": "./offsets.ts",
     "./consultants": "./consultants.ts",
-    "./billing": "./billing.ts"
+    "./billing": "./billing.ts",
+    "./facilities": "./facilities.ts",
+    "./report-boundary": "./report-boundary.ts"
   }
 }

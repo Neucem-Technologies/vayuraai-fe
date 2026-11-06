@@ -8,7 +8,7 @@ import { needsBilling, resolvePostLoginPath } from "@vayura/api-contracts/profil
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuthStore } from "@/hooks/use-auth";
+import { isSmeWorkspace, useAuthStore } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 import { ApiRequestError } from "@/lib/api-client";
 import {
@@ -73,9 +73,9 @@ export default function Billing() {
 
   const plans = useMemo(() => {
     const list = catalog.data?.plans ?? [];
-    const sme = Boolean(tenant?.smeSolo) || user?.userType === "sme";
+    const sme = isSmeWorkspace(user?.userType, tenant);
     return list.filter((p) => (sme ? p.audience === "company" : p.audience === "consultant"));
-  }, [catalog.data?.plans, tenant?.smeSolo, user?.userType]);
+  }, [catalog.data?.plans, tenant, user?.userType]);
 
   const alreadyPaid = tenant && !needsBilling({
     user: {
@@ -191,7 +191,17 @@ export default function Billing() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
         <p className="text-sm text-muted-foreground">This workspace is already subscribed.</p>
-        <Button onClick={() => setLocation(onboardingComplete ? (tenant?.smeSolo ? "/dashboard" : "/clients") : "/onboarding/organization")}>
+        <Button
+          onClick={() =>
+            setLocation(
+              onboardingComplete
+                ? isSmeWorkspace(user?.userType, tenant)
+                  ? "/dashboard"
+                  : "/clients"
+                : "/onboarding/organization",
+            )
+          }
+        >
           Continue
         </Button>
       </div>

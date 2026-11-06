@@ -61,6 +61,7 @@ import {
   reportBoundaryOptions,
 } from "@/lib/facilities";
 import { defaultReportingPeriod } from "@/lib/reporting-period";
+import { facilityMatchesBoundary } from "@vayura/api-contracts/report-boundary";
 import { Link } from "wouter";
 
 const TEMPLATES = [
@@ -147,21 +148,11 @@ export default function Reports() {
   const boundaryOptions = useMemo(() => reportBoundaryOptions(facilities), [facilities]);
 
   const matchingActivityCount = useMemo(() => {
-    const inPeriod = emissions.filter((e) => {
+    return emissions.filter((e) => {
       const d = e.date?.slice(0, 10);
-      if (!d) return false;
-      return d >= periodStart && d <= periodEnd;
-    });
-    if (boundary === "all") return inPeriod.length;
-    if (boundary === "india") {
-      return inPeriod.filter((e) => {
-        const f = (e.facility ?? "").toLowerCase();
-        return f === "india" || f.endsWith(", india") || /\b(india|indian)\b/.test(f);
-      }).length;
-    }
-    return inPeriod.filter(
-      (e) => (e.facility ?? "").trim().toLowerCase() === boundary.trim().toLowerCase(),
-    ).length;
+      if (!d || d < periodStart || d > periodEnd) return false;
+      return facilityMatchesBoundary(e.facility, boundary);
+    }).length;
   }, [emissions, periodStart, periodEnd, boundary]);
 
   const createMutation = useMutation({
