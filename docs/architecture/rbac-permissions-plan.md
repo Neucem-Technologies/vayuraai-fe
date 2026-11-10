@@ -101,23 +101,34 @@ Stable `UPPER_SNAKE` codes (API + FE share via `@vayura/api-contracts`):
 | --- | --- |
 | `consultant_admin` | All tenant/org ops for allowed orgs; portal/verifier/team |
 | `consultant_member` | Ops on **assigned** orgs only; no `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen` |
-| `client_viewer` | Baseline portal role: summary read; download optional via org invite settings (see below) |
-| `client_contributor` | Client-side role with **configurable** portal access (v1 options below) — not full operator write |
-| `verifier` | `verifier.message` only |
-| SME solo | Same codes as firm, but **deny** firm-only codes (`portal.manage`, `policy.manage`, directory listing) via policy |
+| `client_viewer` | External / portal role; access level from invite option (below) |
+| `client_contributor` | External / portal contributor; same access-level options in v1 (limited write later) |
+| `verifier` | `verifier.message` only (desk/inbox) |
+| SME solo admin | Same as firm admin for **own org**, including inviting external people with access options; still **deny** multi-client firm features (`policy.manage`, public directory listing, `/clients` portfolio) |
 
-### 4.3 Client portal access options (viewer / contributor)
+### 4.3 Shared access levels (Read / Read + download)
 
-When a firm admin invites a client user, they choose an access level (stored on membership / invite):
+Used whenever someone is invited as an **external portal user** — by a **consulting firm** (for a client org) **or by an SME** (for their own company).
 
-| Option | Codes | UI |
+| Option | Codes | Can do |
 | --- | --- | --- |
-| **Read only** | `emissions.read` | Dashboard / summaries only |
-| **Read + download** | `emissions.read`, `report.download` | Same + report PDF download |
+| **Read only** | `emissions.read` | Dashboard / summaries |
+| **Read + download** | `emissions.read`, `report.download` | Above + report PDFs |
 
-- Default for new invites: **Read + download** (matches today’s viewer behaviour) unless product chooses otherwise.  
-- `client_viewer` and `client_contributor` both use this option set in v1; contributor may later gain limited write codes — **not** in Phase A.  
-- Firm admin needs `portal.manage` to set/change the option. SME solo still cannot invite portal users.
+**Who can invite**
+
+| Inviter | Who they can add | Access level picker |
+| --- | --- | --- |
+| Firm admin | Client viewer / client contributor on a client org | Read only · Read + download |
+| SME admin | Contributors (and other external helpers on their org) — same option set | Read only · Read + download |
+| Firm or SME admin | Verifiers | Messaging desk (separate from portal read options) |
+
+Notes:
+- Default invite option: **Read + download** (unless product picks Read only).  
+- Portal / contributor users never upload, review, or approve in v1.  
+- Permission to manage these invites: `portal.manage` (grant to **firm admin and SME admin**; remove from the old SME deny-list).  
+- Still firm-only: multi-client portfolio, policies library, public consultant directory listing.  
+- Store chosen option on membership/invite; resolve into `permissions[]` on `/auth/me`.
 
 **Scope always applies:** permission without org/tenant scope is invalid for data APIs.
 
@@ -197,8 +208,8 @@ When a firm admin invites a client user, they choose an access level (stored on 
 
 1. Stay with **fixed roles only**, or allow tenant-defined custom roles later?  
 2. Portal invite default: **Read + download** or **Read only**? (proposal: Read + download)  
-3. Should members get `billing.manage` or admin-only?  
-4. Single permission list on `/auth/me` vs fetch `/permissions` endpoint?  
+3. SME invite labels in UI: “Contributor” only, or also “Advisor / consultant (read access)”?  
+4. Should members get `billing.manage` or admin-only?  
 5. Who owns the matrix doc after this lands — product or eng?  
 
 ---

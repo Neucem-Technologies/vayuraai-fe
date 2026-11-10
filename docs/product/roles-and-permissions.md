@@ -34,20 +34,23 @@ Access resolution order (first match wins): **verifier membership → client_vie
 | Firm member | invite / `consultant` | `consultant` | `consultant_member` | Assigned clients |
 | SME admin | `sme` | `consultant` | `consultant_admin` (UI may say “Company admin”) | `/dashboard` |
 | SME teammate | team invite on solo tenant | `consultant` | `consultant_member` | Same single org |
-| Client viewer | firm invite (not SME) | `client_viewer` | — | `/client/dashboard` |
-| Client contributor | firm invite (not SME) | `client_contributor` | — | `/client/*` (access option) |
-| Verifier | verifier invite | `verifier` | — | `/verifier` |
+| Client viewer | invite from firm **or SME** | `client_viewer` | — | `/client/dashboard` |
+| Client contributor | invite from firm **or SME** | `client_contributor` | — | `/client/*` |
+| Verifier | invite from firm or SME | `verifier` | — | `/verifier` |
 
-### Client portal access options
+### External access options (firm + SME)
 
-When inviting a client user, firm admin picks:
+Both **consulting firms** (per client org) and **SME companies** (their own org) can invite external people and pick:
 
 | Option | Can do |
 | --- | --- |
 | **Read only** | View dashboard / emissions summary |
 | **Read + download** | Above + download report PDFs |
 
-Proposed default: **Read + download**. Portal users never upload/review/approve.
+Applies to viewer / contributor style invites. Verifiers stay on the messaging desk (separate).  
+Proposed default: **Read + download**. These users do not upload / review / approve in v1.
+
+SME still does **not** get firm portfolio, policies library, or public directory listing — but **can** manage contributors + access level on their org.
 
 ---
 
@@ -59,7 +62,7 @@ Returned on `/auth/me` as `permissions`:
 | --- | --- |
 | `readOnly` | `client_viewer` |
 | `canManageTenant` | `consultant_admin` |
-| `canManageClientPortal` | `consultant_admin` (firm; UI/API also need plan + org flag) |
+| `canManageClientPortal` | `consultant_admin` (firm **and SME**; plan/org flags as applicable) |
 | `canAssignConsultants` | `consultant_admin` |
 
 ---
@@ -114,18 +117,17 @@ Legend: **Y** = allowed · **N** = blocked · **Admin** = `consultant_admin` onl
 | View audit log | Y | Y | N | N |
 | Download assurance ZIP | Y | Y | N | N |
 
-### E. Firm-only features (`blockSmeSolo`)
-
-Blocked for SME solo tenants (even admins):
+### E. Firm-only vs SME (updated intent)
 
 | Feature | Firm | SME solo |
 | --- | --- | --- |
-| Client viewer invite / portal management | Admin + Growth+ + org enabled | **Blocked** |
-| Policies library | Y | **Blocked** |
-| Public directory listing toggle | Admin | **Blocked** |
-| Consultant “firm” portfolio APIs under `/api/v1/consultant/*` | Y | **Blocked** |
+| Multi-client portfolio `/clients` | Y | N |
+| Policies library | Y | N |
+| Public directory listing | Admin | N |
+| Invite viewer / contributor + **Read / Read + download** | Y | **Y** (own org) |
+| Verifiers desk | Y | Y |
 
-SME **can** still use verifiers desk (paid) and Find-a-consultant as a buyer.
+Today some portal invite APIs still use `blockSmeSolo` — RBAC work should **open SME contributor/portal invites** while keeping portfolio/policies/listing firm-only.
 
 ### F. Portals & external actors
 
