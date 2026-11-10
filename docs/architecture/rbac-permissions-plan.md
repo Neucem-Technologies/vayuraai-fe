@@ -100,7 +100,7 @@ Stable `UPPER_SNAKE` codes (API + FE share via `@vayura/api-contracts`):
 | Role | Default permissions (summary) |
 | --- | --- |
 | `consultant_admin` | All tenant/org ops for allowed orgs; portal/verifier/team |
-| `consultant_member` | Ops on **assigned** orgs only; no `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen` |
+| `consultant_member` (firm or SME) | **Subset assigned by admin** from an allow-list (see 4.4); never self-grant admin-only codes |
 | `client_viewer` | External / portal role; access level from invite option (below) |
 | `client_contributor` | External / portal contributor; same access-level options in v1 (limited write later) |
 | `verifier` | `verifier.message` only (desk/inbox) |
@@ -131,6 +131,17 @@ Notes:
 - Store chosen option on membership/invite; resolve into `permissions[]` on `/auth/me`.
 
 **Scope always applies:** permission without org/tenant scope is invalid for data APIs.
+
+### 4.4 Member permissions come from admin
+
+Operators on a tenant are not only “admin vs fixed member template.”
+
+- **Admin** holds the full role allow-list for that workspace (firm or SME).  
+- **Each member** receives **only the permissions the admin grants them** (stored on membership).  
+- Admin can change a member’s set later; member cannot grant themselves extra rights.  
+- Hard ceiling (never assignable to members): `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen`, and other admin-only codes.  
+- Firm members are still limited to **assigned orgs**; SME members only have the single company org.  
+- Phase A can ship: default member pack = today’s member matrix, plus persistence for per-member overrides. UI to edit the pack can follow immediately after.
 
 ---
 

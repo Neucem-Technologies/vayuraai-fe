@@ -33,7 +33,7 @@ Access resolution order (first match wins): **verifier membership → client_vie
 | Firm admin | `consultant` | `consultant` | `consultant_admin` | `/clients` |
 | Firm member | invite / `consultant` | `consultant` | `consultant_member` | Assigned clients |
 | SME admin | `sme` | `consultant` | `consultant_admin` (UI may say “Company admin”) | `/dashboard` |
-| SME teammate | team invite on solo tenant | `consultant` | `consultant_member` | Same single org |
+| SME teammate | team invite on solo tenant | `consultant` | `consultant_member` (permissions **granted by SME admin**) | Same single org |
 | Client viewer | invite from firm **or SME** | `client_viewer` | — | `/client/dashboard` |
 | Client contributor | invite from firm **or SME** | `client_contributor` | — | `/client/*` |
 | Verifier | invite from firm or SME | `verifier` | — | `/verifier` |
@@ -51,6 +51,13 @@ Applies to viewer / contributor style invites. Verifiers stay on the messaging d
 Proposed default: **Read + download**. These users do not upload / review / approve in v1.
 
 SME still does **not** get firm portfolio, policies library, or public directory listing — but **can** manage contributors + access level on their org.
+
+### Member permissions (firm + SME)
+
+- **Admin** decides what each **member** is allowed to do (from a safe allow-list).  
+- Member only gets what admin assigned — not the full admin set.  
+- Examples admin may grant: upload, review, approve, reports, emissions read, etc.  
+- Admin-only stays with admin: team management, portal/contributor invites, period reopen, tenant settings.
 
 ---
 
