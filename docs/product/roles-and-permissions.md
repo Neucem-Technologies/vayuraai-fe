@@ -13,7 +13,7 @@ Related: [requirements.md](./requirements.md) (flows) · [feature-client-viewer-
 | --- | --- | --- |
 | **1. Signup / account type** (`User.userType`) | How the account was created | `consultant` · `sme` · `verifier` (invite-only) |
 | **2. Access kind** (`access.kind`) | How the session is authorized | `consultant` · `client_viewer` · `verifier` |
-| **3. Role inside that kind** | Fine-grained rights | Tenant: `consultant_admin` \| `consultant_member` · Org: `client_viewer` (and unused `client_contributor`) |
+| **3. Role inside that kind** | Fine-grained rights | Tenant: `consultant_admin` \| `consultant_member` · Org: `client_viewer` \| `client_contributor` (+ portal access option) |
 
 **Workspace shape**
 
@@ -35,7 +35,19 @@ Access resolution order (first match wins): **verifier membership → client_vie
 | SME admin | `sme` | `consultant` | `consultant_admin` (UI may say “Company admin”) | `/dashboard` |
 | SME teammate | team invite on solo tenant | `consultant` | `consultant_member` | Same single org |
 | Client viewer | firm invite (not SME) | `client_viewer` | — | `/client/dashboard` |
+| Client contributor | firm invite (not SME) | `client_contributor` | — | `/client/*` (access option) |
 | Verifier | verifier invite | `verifier` | — | `/verifier` |
+
+### Client portal access options
+
+When inviting a client user, firm admin picks:
+
+| Option | Can do |
+| --- | --- |
+| **Read only** | View dashboard / emissions summary |
+| **Read + download** | Above + download report PDFs |
+
+Proposed default: **Read + download**. Portal users never upload/review/approve.
 
 ---
 
@@ -147,7 +159,7 @@ SME **can** still use verifiers desk (paid) and Find-a-consultant as a buyer.
 
 | Item | Status |
 | --- | --- |
-| `client_contributor` | Enum / types only — no journey |
+| `client_contributor` | Role reserved; portal **Read** / **Read + download** options are the v1 product intent (wire with RBAC module) |
 | Per-field ACL beyond admin/member/viewer/verifier | Not modelled |
 | SSO / IdP roles | Roadmap |
 

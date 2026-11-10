@@ -101,9 +101,23 @@ Stable `UPPER_SNAKE` codes (API + FE share via `@vayura/api-contracts`):
 | --- | --- |
 | `consultant_admin` | All tenant/org ops for allowed orgs; portal/verifier/team |
 | `consultant_member` | Ops on **assigned** orgs only; no `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen` |
-| `client_viewer` | `emissions.read` (summary), `report.download` only; `readOnly` |
+| `client_viewer` | Baseline portal role: summary read; download optional via org invite settings (see below) |
+| `client_contributor` | Client-side role with **configurable** portal access (v1 options below) — not full operator write |
 | `verifier` | `verifier.message` only |
 | SME solo | Same codes as firm, but **deny** firm-only codes (`portal.manage`, `policy.manage`, directory listing) via policy |
+
+### 4.3 Client portal access options (viewer / contributor)
+
+When a firm admin invites a client user, they choose an access level (stored on membership / invite):
+
+| Option | Codes | UI |
+| --- | --- | --- |
+| **Read only** | `emissions.read` | Dashboard / summaries only |
+| **Read + download** | `emissions.read`, `report.download` | Same + report PDF download |
+
+- Default for new invites: **Read + download** (matches today’s viewer behaviour) unless product chooses otherwise.  
+- `client_viewer` and `client_contributor` both use this option set in v1; contributor may later gain limited write codes — **not** in Phase A.  
+- Firm admin needs `portal.manage` to set/change the option. SME solo still cannot invite portal users.
 
 **Scope always applies:** permission without org/tenant scope is invalid for data APIs.
 
@@ -154,14 +168,14 @@ Stable `UPPER_SNAKE` codes (API + FE share via `@vayura/api-contracts`):
 
 ### Phase C — Controlled extensibility
 
-- `client_contributor` (if product wants write-lite client users)  
+- `client_contributor` beyond read options (limited write, if product asks)  
 - Optional custom role **templates** per tenant (only if pilots demand; avoid early)  
 - ERP `integration.manage` when Ashish’s connector ships  
 
-### Not in v1
+### Not in v1 (Phase A)
 
-- Free-form per-user permission editing (high compliance risk / support burden)  
-- Attribute-based engine (ABAC) beyond org assignment + smeSolo  
+- Free-form arbitrary permission pickers beyond the **Read** / **Read + download** portal options  
+- Full ABAC engine beyond org assignment + smeSolo + portal access option  
 - SSO group → role mapping (Phase 3 / enterprise)  
 
 ---
@@ -182,7 +196,7 @@ Stable `UPPER_SNAKE` codes (API + FE share via `@vayura/api-contracts`):
 ## 8. Open questions (need team decision)
 
 1. Stay with **fixed roles only**, or allow tenant-defined custom roles later?  
-2. Ship `client_contributor` in this module or defer?  
+2. Portal invite default: **Read + download** or **Read only**? (proposal: Read + download)  
 3. Should members get `billing.manage` or admin-only?  
 4. Single permission list on `/auth/me` vs fetch `/permissions` endpoint?  
 5. Who owns the matrix doc after this lands — product or eng?  
