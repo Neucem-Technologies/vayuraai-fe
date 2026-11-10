@@ -132,16 +132,26 @@ Notes:
 
 **Scope always applies:** permission without org/tenant scope is invalid for data APIs.
 
-### 4.4 Member permissions come from admin
+### 4.4 Member access is assigned by admin (permissions + scope)
 
-Operators on a tenant are not only “admin vs fixed member template.”
+Operators are not only “admin vs one fixed member pack.”
 
-- **Admin** holds the full role allow-list for that workspace (firm or SME).  
-- **Each member** receives **only the permissions the admin grants them** (stored on membership).  
-- Admin can change a member’s set later; member cannot grant themselves extra rights.  
-- Hard ceiling (never assignable to members): `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen`, and other admin-only codes.  
-- Firm members are still limited to **assigned orgs**; SME members only have the single company org.  
-- Phase A can ship: default member pack = today’s member matrix, plus persistence for per-member overrides. UI to edit the pack can follow immediately after.
+**For consulting firms (same model, stronger scoping):**
+
+1. **Permissions** — admin grants each member a subset from the safe allow-list (upload, review, approve, reports, …).  
+2. **Clients** — admin assigns **which client orgs** that member can access. Member sees **only those clients’ data** (`allowedOrgIds` / existing org assignment).  
+3. Both are required for data APIs: *permission code* **and** *org in assigned set*.
+
+**For SME:**
+
+1. Same permission grants from admin.  
+2. Scope is the single company org (no multi-client portfolio).
+
+Rules:
+- Member only gets what admin assigned; cannot self-elevate.  
+- Hard ceiling (never for members): `tenant.manage`, `team.manage`, `portal.manage`, `period.reopen`, tenant billing/settings.  
+- Unassigned firm client → no read/write (security boundary).  
+- Phase A: keep today’s defaults + wire catalogue; persist per-member permission overrides; client assignment already exists — expose clearly in admin UI with permission picker.
 
 ---
 

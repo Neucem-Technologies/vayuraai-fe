@@ -52,12 +52,18 @@ Proposed default: **Read + download**. These users do not upload / review / appr
 
 SME still does **not** get firm portfolio, policies library, or public directory listing — but **can** manage contributors + access level on their org.
 
-### Member permissions (firm + SME)
+### Member access (firm + SME) — admin assigned
 
-- **Admin** decides what each **member** is allowed to do (from a safe allow-list).  
-- Member only gets what admin assigned — not the full admin set.  
-- Examples admin may grant: upload, review, approve, reports, emissions read, etc.  
-- Admin-only stays with admin: team management, portal/contributor invites, period reopen, tenant settings.
+**Consulting firm admin can set, per member:**
+
+1. **Permissions** — what they may do (from a safe list: upload, review, approve, reports, …)  
+2. **Clients** — which client organisations they can open  
+
+Member only accesses **assigned clients** and only with **granted permissions**. That keeps tenant isolation and least privilege intact.
+
+**SME admin** assigns permissions the same way; scope is the one company (no client switcher).
+
+Admin-only stays with admin: team management, portal/contributor invites, period reopen, tenant settings.
 
 ---
 
