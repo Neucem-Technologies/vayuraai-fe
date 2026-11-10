@@ -3,7 +3,7 @@
 **Source of truth for who can do what** on the Vayura platform (`dev`).  
 Code: `access-context.service.ts`, route middlewares (`requireConsultant*`, `blockSmeSolo`, `blockClientViewerWrites`, `requirePaidSubscription`), review SoD.
 
-Related: [requirements.md](./requirements.md) (flows) · [feature-client-viewer-portal.md](./feature-client-viewer-portal.md)
+Related: [requirements.md](./requirements.md) (flows) · [feature-client-viewer-portal.md](./feature-client-viewer-portal.md) · [RBAC plan (next)](../architecture/rbac-permissions-plan.md)
 
 ---
 

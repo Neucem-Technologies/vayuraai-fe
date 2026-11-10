@@ -89,6 +89,8 @@ See `CONTRIBUTING.md`.
 
 - `docs/product/requirements.md` — **product details + flows** (start here)
 - `docs/product/roles-and-permissions.md` — **roles, users, permissions matrix**
+- `docs/architecture/rbac-permissions-plan.md` — RBAC module plan (discussion)
+- `docs/architecture/erp-integration-plan.md` — ERP integration plan (discussion)
 - `docs/development-plan.md` — module status / next work
 - `docs/product/feature-client-viewer-portal.md` — client portal reference
 - `docs/frontend-architecture.md`
