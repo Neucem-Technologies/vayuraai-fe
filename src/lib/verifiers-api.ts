@@ -82,6 +82,40 @@ export function getVerificationThread(id: string) {
   );
 }
 
+export type ReviewPackUpload = {
+  id: string;
+  originalFilename: string;
+  status: string;
+  facilityLabel: string | null;
+  createdAt: string;
+  activityDateFrom: string | null;
+  activityDateTo: string | null;
+};
+
+export type ReviewPackReport = {
+  id: string;
+  title: string;
+  framework: string;
+  status: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  createdAt: string;
+  hasPdf: boolean;
+};
+
+export type ThreadReviewPack = {
+  threadId: string;
+  orgId: string;
+  clientName: string;
+  subject: string;
+  uploads: ReviewPackUpload[];
+  reports: ReviewPackReport[];
+};
+
+export function getThreadReviewPack(threadId: string) {
+  return apiFetch<ThreadReviewPack>(`/api/v1/verifiers/threads/${threadId}/review-pack`);
+}
+
 export function postVerificationMessage(id: string, body: string) {
   return apiFetch<{ ok: true }>(`/api/v1/verifiers/threads/${id}/messages`, {
     method: "POST",

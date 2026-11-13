@@ -18,7 +18,11 @@ export default function VerifierInbox() {
     <div data-testid="page-verifier-inbox">
       <PageHeader
         title="Verification requests"
-        subtitle={inbox.data ? `${inbox.data.organisationName} · reply here. The consulting firm gets an email.` : "Requests from consulting firms you work with."}
+        subtitle={
+          inbox.data
+            ? `${inbox.data.organisationName} · review uploads & reports, then leave comments. The firm gets an email.`
+            : "Review evidence and comment on requests from firms you work with."
+        }
       />
       <Card className="min-h-[32rem] overflow-hidden">
         {threadId ? (
@@ -34,7 +38,7 @@ export default function VerifierInbox() {
           </CardContent>
         ) : (inbox.data?.threads.length ?? 0) === 0 ? (
           <CardContent className="py-10 text-sm text-muted-foreground">
-            No requests yet. When a consultant asks you to review a client, it will show up here and in your email.
+            No requests yet. When a firm asks you to review a client’s uploads and reports, it will show up here (and in your email).
           </CardContent>
         ) : (
           <div className="divide-y">

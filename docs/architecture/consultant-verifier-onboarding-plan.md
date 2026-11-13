@@ -31,9 +31,23 @@ Make **consultant firm / SME setup** and **verifier join** a clear, reliable mod
 1. **Consultant onboarding clarity** — step labels, SME vs firm copy, resume mid-flow, failure recovery  
 2. **Verifier onboarding** — first-run empty state, org profile basics after accept, invite email reliability  
 3. **Admin visibility** — pending invites, expired/cancelled, resend  
-4. **Emails** — branded invite + welcome (same tone as marketing SES work)  
-5. **Contracts** — shared DTOs for onboarding status / invite states if missing  
-6. **Align with RBAC** — gate invite actions with `verifier.manage` / `team.manage` when Shreya lands codes (use admin checks until then)
+4. **Verifier review workflow** — see client **uploads + reports**, leave **comments** on the request thread  
+5. **Emails** — branded invite + welcome  
+6. **Align with RBAC** — `verifier.manage` / `team.manage` when Shreya lands codes  
+
+---
+
+## Verifier review workflow (product)
+
+```text
+Firm/SME invites verifier → accept → active
+Firm opens “Request verification” for a client org
+  → thread (comments)
+  → review pack: uploads (needs_review/completed) + reports (final/submitted)
+Verifier opens request → evidence panel + comments
+```
+
+Read-only evidence; no upload/approve by verifier in v1. Comments = thread messages (can reference a file/report).
 
 ---
 
@@ -42,11 +56,12 @@ Make **consultant firm / SME setup** and **verifier join** a clear, reliable mod
 | Slice | Work | Repo |
 | --- | --- | --- |
 | **S0** | Plan + branch (this doc) | FE |
-| **S1** | Verifier invite lifecycle: list pending, expiry copy, resend/cancel UX | FE + BE |
-| **S2** | Verifier first-run after accept (welcome + empty inbox guidance) | FE |
-| **S3** | Consultant onboarding polish (SME/firm paths, step resume) | FE (+ BE if status API gaps) |
-| **S4** | Invite / welcome emails (SES or outbox) | BE |
-| **S5** | QA checklist + handoff notes | both |
+| **S1** | Verifier invite lifecycle: pending / expired / resend / cancel | FE + BE |
+| **S1b** | Review pack API + evidence panel in conversation (uploads, reports, comments) | FE + BE |
+| **S2** | Verifier first-run after accept | FE |
+| **S3** | Consultant onboarding polish | FE (+ BE if needed) |
+| **S4** | Invite / welcome emails | BE |
+| **S5** | PDF download for verifiers on review-pack reports (optional) | both |
 
 ---
 
