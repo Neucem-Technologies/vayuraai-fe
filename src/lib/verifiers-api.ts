@@ -1,5 +1,7 @@
 import { apiFetch } from "@/lib/api-client";
 
+export type VerifierInviteState = "none" | "pending" | "expired";
+
 export type VerifierRecord = {
   id: string;
   name: string;
@@ -7,6 +9,8 @@ export type VerifierRecord = {
   contactEmail: string;
   status: "invited" | "active";
   pendingInviteId: string | null;
+  inviteState: VerifierInviteState;
+  inviteExpiresAt: string | null;
 };
 
 export type VerificationThreadSummary = {
@@ -43,6 +47,17 @@ export function inviteVerifier(input: { name: string; contactName: string; email
 
 export function cancelVerifierInvite(id: string) {
   return apiFetch<{ ok: true }>(`/api/v1/verifiers/invites/${id}`, { method: "DELETE" });
+}
+
+export function resendVerifierInvite(verifierOrgId: string) {
+  return apiFetch<{ inviteToken: string; expiresAt: string; emailSent: boolean; verifierId: string }>(
+    `/api/v1/verifiers/${verifierOrgId}/resend-invite`,
+    { method: "POST" },
+  );
+}
+
+export function removePendingVerifier(verifierOrgId: string) {
+  return apiFetch<{ ok: true }>(`/api/v1/verifiers/${verifierOrgId}`, { method: "DELETE" });
 }
 
 export function listVerifierInbox() {

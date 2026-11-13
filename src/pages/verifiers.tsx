@@ -36,7 +36,30 @@ import {
   inviteVerifier,
   listVerifierDesk,
   openVerificationThread,
+  removePendingVerifier,
+  resendVerifierInvite,
 } from "@/lib/verifiers-api";
+
+function inviteBadgeLabel(verifier: { status: string; inviteState: string }) {
+  if (verifier.status === "active") return "Active";
+  if (verifier.inviteState === "expired") return "Expired";
+  if (verifier.inviteState === "pending") return "Invited";
+  return "Invited";
+}
+
+function inviteStatusCopy(verifier: { status: string; inviteState: string; inviteExpiresAt: string | null }) {
+  if (verifier.status === "active") return "They can sign in and reply to requests.";
+  if (verifier.inviteState === "expired") {
+    return "This invite has expired. Resend a new link or remove them.";
+  }
+  if (verifier.inviteExpiresAt) {
+    const when = new Date(verifier.inviteExpiresAt);
+    if (!Number.isNaN(when.getTime())) {
+      return `Waiting for them to set a password. Invite expires ${when.toLocaleDateString()}.`;
+    }
+  }
+  return "Waiting for them to set a password from the invite email.";
+}
 
 function errorMessage(error: unknown) {
   return error instanceof ApiRequestError ? error.message : "Something went wrong. Try again.";
@@ -94,12 +117,36 @@ export default function Verifiers() {
   });
 
   const cancel = useMutation({
-    mutationFn: (id: string) => cancelVerifierInvite(id),
+    mutationFn: async (verifier: { id: string; pendingInviteId: string | null }) => {
+      if (verifier.pendingInviteId) {
+        await cancelVerifierInvite(verifier.pendingInviteId);
+        return;
+      }
+      await removePendingVerifier(verifier.id);
+    },
     onSuccess: async () => {
+      setSelectedId(null);
       await queryClient.invalidateQueries({ queryKey: ["verifier-desk"] });
       toast({ title: "Invite cancelled" });
     },
     onError: (error) => toast({ title: "Could not cancel", description: errorMessage(error), variant: "destructive" }),
+  });
+
+  const resend = useMutation({
+    mutationFn: (verifierOrgId: string) => resendVerifierInvite(verifierOrgId),
+    onSuccess: (data) => {
+      const link = `${window.location.origin}/accept-verifier-invite?token=${encodeURIComponent(data.inviteToken)}`;
+      setInviteLink(data.emailSent ? null : link);
+      void queryClient.invalidateQueries({ queryKey: ["verifier-desk"] });
+      toast({
+        title: data.emailSent ? "Invite resent" : "Invite ready",
+        description: data.emailSent
+          ? "They will receive a new link to set a password."
+          : "Email is not configured. Share the invite link below.",
+      });
+      if (!data.emailSent) setInviteOpen(true);
+    },
+    onError: (error) => toast({ title: "Could not resend", description: errorMessage(error), variant: "destructive" }),
   });
 
   const request = useMutation({
@@ -169,8 +216,11 @@ export default function Verifiers() {
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
                       <span className="font-medium text-sm truncate">{verifier.name}</span>
-                      <Badge variant={verifier.status === "active" ? "default" : "outline"} className="ml-auto">
-                        {verifier.status === "active" ? "Active" : "Invited"}
+                      <Badge
+                        variant={verifier.status === "active" ? "default" : "outline"}
+                        className="ml-auto"
+                      >
+                        {inviteBadgeLabel(verifier)}
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1 truncate">
@@ -193,21 +243,29 @@ export default function Verifiers() {
                       <div>
                         <h2 className="font-medium">{selected.name}</h2>
                         <p className="text-sm text-muted-foreground">
-                          {selected.status === "active"
-                            ? "They can sign in and reply to requests."
-                            : "Waiting for them to set a password from the invite email."}
+                          {inviteStatusCopy(selected)}
                         </p>
                       </div>
-                      <div className="flex gap-2">
-                        {isAdmin && selected.pendingInviteId && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={cancel.isPending}
-                            onClick={() => cancel.mutate(selected.pendingInviteId!)}
-                          >
-                            Cancel invite
-                          </Button>
+                      <div className="flex flex-wrap gap-2">
+                        {isAdmin && selected.status === "invited" && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={resend.isPending}
+                              onClick={() => resend.mutate(selected.id)}
+                            >
+                              {selected.inviteState === "expired" ? "Resend invite" : "Resend invite"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={cancel.isPending}
+                              onClick={() => cancel.mutate(selected)}
+                            >
+                              Cancel invite
+                            </Button>
+                          </>
                         )}
                         <Button
                           size="sm"
