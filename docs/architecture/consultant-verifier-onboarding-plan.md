@@ -37,17 +37,20 @@ Make **consultant firm / SME setup** and **verifier join** a clear, reliable mod
 
 ---
 
-## Verifier review workflow (product)
+## Verifier review workflow (industry-style)
 
 ```text
-Firm/SME invites verifier → accept → active
-Firm opens “Request verification” for a client org
-  → thread (comments)
-  → review pack: uploads (needs_review/completed) + reports (final/submitted)
-Verifier opens request → evidence panel + comments
+Invite → Accept → Active
+Firm opens verification engagement for a client
+  Status: Requested → Under review → Queries → Closed
+Evidence room (read-only):
+  - Source uploads (needs_review / completed)
+  - Disclosure reports (final / submitted) + session-bound PDF download
+Discussion:
+  - Comments / queries on evidence (email notify other side)
 ```
 
-Read-only evidence; no upload/approve by verifier in v1. Comments = thread messages (can reference a file/report).
+Aligned with assurance practice: evidence room + query trail + engagement status. Verifier cannot mutate inventory.
 
 ---
 
@@ -56,12 +59,12 @@ Read-only evidence; no upload/approve by verifier in v1. Comments = thread messa
 | Slice | Work | Repo |
 | --- | --- | --- |
 | **S0** | Plan + branch (this doc) | FE |
-| **S1** | Verifier invite lifecycle: pending / expired / resend / cancel | FE + BE |
-| **S1b** | Review pack API + evidence panel in conversation (uploads, reports, comments) | FE + BE |
+| **S1** | Verifier invite lifecycle: pending / expired / resend / cancel | FE + BE — done |
+| **S1b** | Evidence room: review pack + comments + engagement status (Requested → Under review → Queries → Closed) | FE + BE — done |
+| **S1c** | Session-bound report PDF download on engagement | FE + BE — done |
 | **S2** | Verifier first-run after accept | FE |
 | **S3** | Consultant onboarding polish | FE (+ BE if needed) |
 | **S4** | Invite / welcome emails | BE |
-| **S5** | PDF download for verifiers on review-pack reports (optional) | both |
 
 ---
 
@@ -75,7 +78,7 @@ Read-only evidence; no upload/approve by verifier in v1. Comments = thread messa
 
 ## Start now
 
-**S1** — harden verifier invite onboarding (admin + accept path), then S2 first-run.
+**S2** — verifier first-run after accept (empty state + org basics), then S3/S4.
 
 ---
 

@@ -20,8 +20,8 @@ export default function VerifierInbox() {
         title="Verification requests"
         subtitle={
           inbox.data
-            ? `${inbox.data.organisationName} · review uploads & reports, then leave comments. The firm gets an email.`
-            : "Review evidence and comment on requests from firms you work with."
+            ? `${inbox.data.organisationName} · evidence room for uploads & reports, then comments. The firm gets an email.`
+            : "Open an engagement to review evidence and leave assurance comments."
         }
       />
       <Card className="min-h-[32rem] overflow-hidden">
@@ -51,8 +51,14 @@ export default function VerifierInbox() {
               >
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm truncate">{thread.subject}</span>
-                  <Badge variant={thread.status === "open" ? "secondary" : "outline"} className="ml-auto">
-                    {thread.status === "open" ? "Open" : "Closed"}
+                  <Badge variant={thread.status === "closed" ? "outline" : "secondary"} className="ml-auto">
+                    {thread.status === "closed"
+                      ? "Closed"
+                      : thread.status === "queries_raised"
+                        ? "Queries"
+                        : thread.status === "under_review"
+                          ? "Under review"
+                          : "Requested"}
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">Client · {thread.clientName}</div>

@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api-client";
+import { fetchSignedPdf } from "@/lib/reports-api";
 
 export type VerifierInviteState = "none" | "pending" | "expired";
 
@@ -13,6 +14,8 @@ export type VerifierRecord = {
   inviteExpiresAt: string | null;
 };
 
+export type VerificationEngagementStatus = "open" | "under_review" | "queries_raised" | "closed";
+
 export type VerificationThreadSummary = {
   id: string;
   verifierOrgId: string;
@@ -20,7 +23,7 @@ export type VerificationThreadSummary = {
   orgId: string;
   clientName: string;
   subject: string;
-  status: "open" | "closed";
+  status: VerificationEngagementStatus;
   updatedAt: string;
   lastMessage: string;
 };
@@ -114,6 +117,29 @@ export type ThreadReviewPack = {
 
 export function getThreadReviewPack(threadId: string) {
   return apiFetch<ThreadReviewPack>(`/api/v1/verifiers/threads/${threadId}/review-pack`);
+}
+
+export function updateVerificationStatus(threadId: string, status: VerificationEngagementStatus) {
+  return apiFetch<{ ok: true; status: VerificationEngagementStatus }>(
+    `/api/v1/verifiers/threads/${threadId}/status`,
+    { method: "PATCH", body: JSON.stringify({ status }) },
+  );
+}
+
+export async function downloadVerificationReportPdf(
+  threadId: string,
+  reportId: string,
+  filename: string,
+): Promise<void> {
+  const signed = await apiFetch<{ url: string; expiresAt: string }>(
+    `/api/v1/verifiers/threads/${threadId}/reports/${reportId}/download`,
+  );
+  const { objectUrl } = await fetchSignedPdf(signed.url);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function postVerificationMessage(id: string, body: string) {

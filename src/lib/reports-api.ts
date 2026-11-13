@@ -31,7 +31,7 @@ export async function submitReport(orgId: string, reportId: string): Promise<Rep
   return data.report;
 }
 
-async function fetchSignedPdf(downloadPath: string): Promise<{ blob: Blob; objectUrl: string }> {
+export async function fetchSignedPdf(downloadPath: string): Promise<{ blob: Blob; objectUrl: string }> {
   if (!baseUrl) throw new Error('VITE_API_BASE_URL is not set.');
   const res = await fetch(`${baseUrl}${downloadPath}`, {
     cache: 'no-store',

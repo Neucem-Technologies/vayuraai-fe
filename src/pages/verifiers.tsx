@@ -174,7 +174,7 @@ export default function Verifiers() {
         title="Verifiers"
         subtitle={
           isSme
-            ? "When your inventory and reports are ready, invite a third-party verification agency to review them on Vayura."
+            ? "Invite a verification agency, open an engagement, and share an evidence room for uploads and disclosure reports."
             : "Onboard an assurance firm, then keep the review on the platform."
         }
         actions={
@@ -292,7 +292,15 @@ export default function Verifiers() {
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium truncate">{thread.subject}</span>
-                              <Badge variant="outline" className="ml-auto">{thread.status === "open" ? "Open" : "Closed"}</Badge>
+                              <Badge variant="outline" className="ml-auto">
+                                {thread.status === "closed"
+                                  ? "Closed"
+                                  : thread.status === "queries_raised"
+                                    ? "Queries"
+                                    : thread.status === "under_review"
+                                      ? "Under review"
+                                      : "Requested"}
+                              </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground mt-1 truncate">
                               {thread.clientName} · {thread.lastMessage || "No message yet"}
