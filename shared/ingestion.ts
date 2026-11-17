@@ -106,10 +106,15 @@ export type ApproveUploadResponse = {
 export type RejectUploadRequest = { reason: string };
 export type RejectUploadResponse = { upload: UploadDto };
 
+export type ActivitySourceKindDto = 'upload' | 'excel' | 'tally' | 'zoho' | 'manual';
+
 export type ActivityRecordDto = {
   id: string;
   organisationId: string;
   documentUploadId: string;
+  sourceKind: ActivitySourceKindDto;
+  sourceLabel: string | null;
+  externalLineId: string | null;
   sourceLineId: string;
   description: string;
   category: string;
@@ -132,6 +137,9 @@ export type ActivityRecordDto = {
   factorSourceName: string;
   kgCO2e: number;
   sourceFilename: string;
+  scope3Category: number | null;
+  currency: string | null;
+  amount: number | null;
   approvedByUserId: string;
   approvedAt: string;
 };
