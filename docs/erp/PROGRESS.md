@@ -8,7 +8,7 @@ The stage checklist, decisions, migration SQL, and verification notes are mainta
 
 - [x] S0 Baseline and safety net
 - [x] S1 Ledger schema
-- [ ] S2 Connector foundation
+- [x] S2 Connector foundation
 - [ ] S3 Tally / Excel parsing
 - [ ] S4 Calculation and conversion
 - [ ] S5 Duplicate, overlap, and correction
