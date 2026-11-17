@@ -26,3 +26,7 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# ERP verification artifacts
+data/e2e-*.log
+e2e-state-*.json
