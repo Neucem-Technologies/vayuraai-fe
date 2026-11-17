@@ -10,7 +10,7 @@ The stage checklist, decisions, migration SQL, and verification notes are mainta
 - [x] S1 Ledger schema
 - [x] S2 Connector foundation
 - [x] S3 Tally / Excel parsing
-- [ ] S4 Calculation and conversion
+- [x] S4 Calculation and conversion
 - [ ] S5 Duplicate, overlap, and correction
 - [ ] S6 Async audit, retention, worker
 - [ ] S7 Backend API
