@@ -60,6 +60,15 @@ export type ExtractedLineItemDto = {
   factorSourceKey: string;
   factorSourceName: string;
   kgCO2e: number;
+  erpModule?: 'expense' | 'bill' | 'journal' | 'purchase' | 'travel' | 'inventory_issue' | null;
+  documentNumber?: string | null;
+  lineNumber?: number | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  erpStatus?: string | null;
+  syncedAt?: string | null;
+  amendmentNumber?: string | null;
+  skippedReason?: string | null;
   /** Billing unit before spend resolution (e.g. contract, month). */
   originalUnit?: string;
   /** INR spend for billing-unit lines when quantity is not the activity amount. */
