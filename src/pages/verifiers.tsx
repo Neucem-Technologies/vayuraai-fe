@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from "react";
 import { useSearch } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,7 +27,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuthStore, useIsConsultantAdmin, useIsSmeWorkspace } from "@/hooks/use-auth";
+import {
+  useIsConsultantAdmin,
+  useIsSmeWorkspace,
+  useCan,
+} from "@/hooks/use-auth";
 import { useClients } from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { toast } from "@/hooks/use-toast";
@@ -39,19 +44,29 @@ import {
 } from "@/lib/verifiers-api";
 
 function errorMessage(error: unknown) {
-  return error instanceof ApiRequestError ? error.message : "Something went wrong. Try again.";
+  return error instanceof ApiRequestError
+    ? error.message
+    : "Something went wrong. Try again.";
 }
 
 export default function Verifiers() {
   const search = useSearch();
   const initialThread = new URLSearchParams(search).get("thread");
+
   const isAdmin = useIsConsultantAdmin();
-  const tenant = useAuthStore((s) => s.tenant);
+  const canManageVerifiers = useCan("verifier.manage");
+  const canMessageVerifier = useCan("verifier.message");
+
+
   const isSme = useIsSmeWorkspace();
   const queryClient = useQueryClient();
   const clients = useClients();
   const activeClientId = useActiveClientStore((s) => s.activeClientId);
-  const desk = useQuery({ queryKey: ["verifier-desk"], queryFn: listVerifierDesk });
+
+  const desk = useQuery({
+    queryKey: ["verifier-desk"],
+    queryFn: listVerifierDesk,
+  });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [threadId, setThreadId] = useState<string | null>(initialThread);
@@ -67,14 +82,27 @@ export default function Verifiers() {
   const [message, setMessage] = useState("");
 
   const verifiers = desk.data?.verifiers ?? [];
-  const selected = verifiers.find((item) => item.id === selectedId) ?? verifiers[0] ?? null;
+  const selected =
+    verifiers.find((item) => item.id === selectedId) ??
+    verifiers[0] ??
+    null;
+
   const threads = useMemo(
-    () => (desk.data?.threads ?? []).filter((thread) => !selected || thread.verifierOrgId === selected.id),
+    () =>
+      (desk.data?.threads ?? []).filter(
+        (thread) => !selected || thread.verifierOrgId === selected.id,
+      ),
     [desk.data?.threads, selected],
   );
 
   const invite = useMutation({
-    mutationFn: () => inviteVerifier({ name, contactName, email, note: note.trim() || undefined }),
+    mutationFn: () =>
+      inviteVerifier({
+        name,
+        contactName,
+        email,
+        note: note.trim() || undefined,
+      }),
     onSuccess: (data) => {
       const link = `${window.location.origin}/accept-verifier-invite?token=${encodeURIComponent(data.inviteToken)}`;
       setInviteLink(data.emailSent ? null : link);
@@ -82,7 +110,9 @@ export default function Verifiers() {
       setContactName("");
       setEmail("");
       setNote("");
+
       void queryClient.invalidateQueries({ queryKey: ["verifier-desk"] });
+
       toast({
         title: data.emailSent ? "Invite emailed" : "Invite created",
         description: data.emailSent
@@ -90,7 +120,12 @@ export default function Verifiers() {
           : "Email is not configured. Share the invite link below.",
       });
     },
-    onError: (error) => toast({ title: "Could not invite", description: errorMessage(error), variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Could not invite",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   const cancel = useMutation({
@@ -99,7 +134,12 @@ export default function Verifiers() {
       await queryClient.invalidateQueries({ queryKey: ["verifier-desk"] });
       toast({ title: "Invite cancelled" });
     },
-    onError: (error) => toast({ title: "Could not cancel", description: errorMessage(error), variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Could not cancel",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   const request = useMutation({
@@ -115,10 +155,21 @@ export default function Verifiers() {
       setSubject("");
       setMessage("");
       setThreadId(data.threadId);
+
       await queryClient.invalidateQueries({ queryKey: ["verifier-desk"] });
-      toast({ title: "Request sent", description: "The verifier receives an email with a link to this conversation." });
+
+      toast({
+        title: "Request sent",
+        description:
+          "The verifier receives an email with a link to this conversation.",
+      });
     },
-    onError: (error) => toast({ title: "Could not open request", description: errorMessage(error), variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Could not open request",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   return (
@@ -131,8 +182,14 @@ export default function Verifiers() {
             : "Onboard an assurance firm, then keep the review on the platform."
         }
         actions={
-          isAdmin ? (
-            <Button onClick={() => { setInviteLink(null); setInviteOpen(true); }} data-testid="button-invite-verifier">
+          isAdmin && canManageVerifiers ? (
+            <Button
+              onClick={() => {
+                setInviteLink(null);
+                setInviteOpen(true);
+              }}
+              data-testid="button-invite-verifier"
+            >
               Invite verifier
             </Button>
           ) : null
@@ -145,7 +202,13 @@ export default function Verifiers() {
         <Card>
           <CardContent className="py-8 text-sm text-muted-foreground">
             Verifiers could not be loaded.{" "}
-            <button type="button" className="underline" onClick={() => desk.refetch()}>Try again</button>
+            <button
+              type="button"
+              className="underline"
+              onClick={() => desk.refetch()}
+            >
+              Try again
+            </button>
           </CardContent>
         </Card>
       ) : (
@@ -154,22 +217,34 @@ export default function Verifiers() {
             <CardContent className="p-2">
               {verifiers.length === 0 ? (
                 <div className="px-3 py-8 text-sm text-muted-foreground">
-                  No verifiers yet. Invite the firm you want to review a client’s inventory.
+                  No verifiers yet. Invite the firm you want to review a client's inventory.
                 </div>
               ) : (
                 verifiers.map((verifier) => (
                   <button
                     key={verifier.id}
                     type="button"
-                    onClick={() => { setSelectedId(verifier.id); setThreadId(null); }}
+                    onClick={() => {
+                      setSelectedId(verifier.id);
+                      setThreadId(null);
+                    }}
                     className={`w-full text-left rounded-md px-3 py-3 ${
-                      selected?.id === verifier.id ? "bg-sidebar-accent" : "hover:bg-muted"
+                      selected?.id === verifier.id
+                        ? "bg-sidebar-accent"
+                        : "hover:bg-muted"
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-                      <span className="font-medium text-sm truncate">{verifier.name}</span>
-                      <Badge variant={verifier.status === "active" ? "default" : "outline"} className="ml-auto">
+                      <span className="font-medium text-sm truncate">
+                        {verifier.name}
+                      </span>
+                      <Badge
+                        variant={
+                          verifier.status === "active" ? "default" : "outline"
+                        }
+                        className="ml-auto"
+                      >
                         {verifier.status === "active" ? "Active" : "Invited"}
                       </Badge>
                     </div>
@@ -184,7 +259,12 @@ export default function Verifiers() {
 
           <Card className="min-h-[32rem] overflow-hidden">
             {threadId ? (
-              <VerificationConversation threadId={threadId} canClose onBack={() => setThreadId(null)} />
+              <VerificationConversation
+                threadId={threadId}
+                canClose={canMessageVerifier}
+                canMessage={canMessageVerifier}
+                onBack={() => setThreadId(null)}
+              />
             ) : (
               <CardContent className="p-4 space-y-4">
                 {selected ? (
@@ -198,31 +278,44 @@ export default function Verifiers() {
                             : "Waiting for them to set a password from the invite email."}
                         </p>
                       </div>
+
                       <div className="flex gap-2">
-                        {isAdmin && selected.pendingInviteId && (
+                        {isAdmin &&
+                          canManageVerifiers &&
+                          selected.pendingInviteId && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={cancel.isPending}
+                              onClick={() =>
+                                cancel.mutate(selected.pendingInviteId!)
+                              }
+                            >
+                              Cancel invite
+                            </Button>
+                          )}
+
+                        {canMessageVerifier && (
                           <Button
-                            variant="outline"
                             size="sm"
-                            disabled={cancel.isPending}
-                            onClick={() => cancel.mutate(selected.pendingInviteId!)}
+                            disabled={selected.status !== "active"}
+                            onClick={() => {
+                              setOrgId(
+                                activeClientId ?? clients.data?.[0]?.id ?? "",
+                              );
+                              setRequestOpen(true);
+                            }}
                           >
-                            Cancel invite
+                            Request verification
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          disabled={selected.status !== "active"}
-                          onClick={() => {
-                            setOrgId(activeClientId ?? clients.data?.[0]?.id ?? "");
-                            setRequestOpen(true);
-                          }}
-                        >
-                          Request verification
-                        </Button>
                       </div>
                     </div>
+
                     {threads.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No conversations with this verifier yet.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No conversations with this verifier yet.
+                      </p>
                     ) : (
                       <div className="divide-y rounded-md border">
                         {threads.map((thread) => (
@@ -233,8 +326,12 @@ export default function Verifiers() {
                             onClick={() => setThreadId(thread.id)}
                           >
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium truncate">{thread.subject}</span>
-                              <Badge variant="outline" className="ml-auto">{thread.status === "open" ? "Open" : "Closed"}</Badge>
+                              <span className="text-sm font-medium truncate">
+                                {thread.subject}
+                              </span>
+                              <Badge variant="outline" className="ml-auto">
+                                {thread.status === "open" ? "Open" : "Closed"}
+                              </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground mt-1 truncate">
                               {thread.clientName} · {thread.lastMessage || "No message yet"}
@@ -245,7 +342,9 @@ export default function Verifiers() {
                     )}
                   </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Invite a verifier to start.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Invite a verifier to start.
+                  </p>
                 )}
               </CardContent>
             )}
@@ -258,35 +357,66 @@ export default function Verifiers() {
           <DialogHeader>
             <DialogTitle>Invite a verifier</DialogTitle>
             <DialogDescription>
-              Use the assurance firm’s name and the person who will sign in. The same steps work for any verifier you work with.
+              Use the assurance firm's name and the person who will sign in. The same steps work for any verifier you work with.
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label htmlFor="verifier-name">Organisation</Label>
-              <Input id="verifier-name" value={name} placeholder="VKU Veridicriton" onChange={(event) => setName(event.target.value)} />
+              <Input
+                id="verifier-name"
+                value={name}
+                placeholder="VKU Veridicriton"
+                onChange={(event) => setName(event.target.value)}
+              />
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="verifier-contact">Contact name</Label>
-              <Input id="verifier-contact" value={contactName} onChange={(event) => setContactName(event.target.value)} />
+              <Input
+                id="verifier-contact"
+                value={contactName}
+                onChange={(event) => setContactName(event.target.value)}
+              />
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="verifier-email">Work email</Label>
-              <Input id="verifier-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Input
+                id="verifier-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="verifier-note">Note in the email</Label>
-              <Textarea id="verifier-note" rows={3} value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
+              <Textarea
+                id="verifier-note"
+                rows={3}
+                value={note}
+                maxLength={500}
+                onChange={(event) => setNote(event.target.value)}
+              />
             </div>
+
             {inviteLink && (
               <p className="text-xs break-all text-muted-foreground">
                 Share this link: {inviteLink}
               </p>
             )}
           </div>
+
           <DialogFooter>
             <Button
-              disabled={invite.isPending || name.trim().length < 2 || contactName.trim().length < 2 || !email.includes("@")}
+              disabled={
+                invite.isPending ||
+                name.trim().length < 2 ||
+                contactName.trim().length < 2 ||
+                !email.includes("@")
+              }
               onClick={() => invite.mutate()}
             >
               {invite.isPending ? "Sending…" : "Send invite"}
@@ -300,9 +430,12 @@ export default function Verifiers() {
           <DialogHeader>
             <DialogTitle>Request verification</DialogTitle>
             <DialogDescription>
-              {selected ? `${selected.name} receives this as the first message, plus an email.` : ""}
+              {selected
+                ? `${selected.name} receives this as the first message, plus an email.`
+                : ""}
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Client</Label>
@@ -312,23 +445,43 @@ export default function Verifiers() {
                 </SelectTrigger>
                 <SelectContent>
                   {(clients.data ?? []).map((client) => (
-                    <SelectItem key={client.id} value={client.id}>{client.shortName}</SelectItem>
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.shortName}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="request-subject">Subject</Label>
-              <Input id="request-subject" value={subject} placeholder="FY 2024-25 inventory review" onChange={(event) => setSubject(event.target.value)} />
+              <Input
+                id="request-subject"
+                value={subject}
+                placeholder="FY 2024-25 inventory review"
+                onChange={(event) => setSubject(event.target.value)}
+              />
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="request-message">Message</Label>
-              <Textarea id="request-message" rows={4} value={message} onChange={(event) => setMessage(event.target.value)} />
+              <Textarea
+                id="request-message"
+                rows={4}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+              />
             </div>
           </div>
+
           <DialogFooter>
             <Button
-              disabled={request.isPending || !orgId || subject.trim().length < 3 || message.trim().length < 1}
+              disabled={
+                request.isPending ||
+                !orgId ||
+                subject.trim().length < 3 ||
+                message.trim().length < 1
+              }
               onClick={() => request.mutate()}
             >
               {request.isPending ? "Sending…" : "Send request"}

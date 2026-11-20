@@ -4,7 +4,10 @@ import { buildAppUser, type AppUser } from '@/lib/user';
 import type { MeProfile } from '@vayura/api-contracts/auth';
 import type { AccessProfile } from '@vayura/api-contracts/auth';
 import type { TenantDto } from '@vayura/api-contracts/tenancy';
-import type { UserType } from '@vayura/api-contracts/common';
+import type {
+  PermissionCode,
+  UserType,
+} from '@vayura/api-contracts/common';
 import {
   getUserType,
   isClientViewer,
@@ -342,4 +345,15 @@ export function tenantMemberRoleLabel(
 ): string {
   if (role === 'consultant_admin') return 'Administrator';
   return sme ? 'Contributor' : 'Member';
+}
+
+export function can(
+  access: AccessProfile | null,
+  permission: PermissionCode,
+): boolean {
+  return access?.permissionCodes?.includes(permission) ?? false;
+}
+
+export function useCan(permission: PermissionCode): boolean {
+  return useAuthStore((s) => can(s.access, permission));
 }

@@ -1,3 +1,4 @@
+
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -20,7 +21,12 @@ import {
   UserSearch,
   ClipboardList,
 } from "lucide-react";
-import { useAuthStore, useIsSmeWorkspace, useTenant } from "@/hooks/use-auth";
+import {
+  useAuthStore,
+  useCan,
+  useIsSmeWorkspace,
+  useTenant,
+} from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { useClients } from "@/hooks/use-data";
 import {
@@ -45,25 +51,61 @@ import {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   useIngestionEvents();
+
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuthStore();
   const tenant = useTenant();
+
   const { activeClientId, setActiveClient } = useActiveClientStore();
   const { data: portfolioClients = [] } = useClients();
-  const activeClient = portfolioClients.find((c) => c.id === activeClientId) ?? null;
+
+  const activeClient =
+    portfolioClients.find((c) => c.id === activeClientId) ?? null;
+
   const clearAllUploads = useIngestionLiveStore((s) => s.clearAllUploads);
-  const [reportingFy, setReportingFy] = useState<ReportingFy>(() => readStoredReportingFy());
+
+  const [reportingFy, setReportingFy] = useState<ReportingFy>(() =>
+    readStoredReportingFy(),
+  );
+
   const fyOptions = listRecentFys(5);
-
   const isSme = useIsSmeWorkspace();
-  const hidePortfolio = isSme;
 
-  // Ensure an active organisation is selected once the list loads (consultant portfolio or SME solo).
+  // Phase A permission checks
+  const canReadEmissions = useCan("emissions.read");
+  const canUpload = useCan("upload.write");
+  const canManageFacilities = useCan("facility.manage");
+  const canManagePeriods = useCan("period.manage");
+  const canReopenPeriods = useCan("period.reopen");
+  const canReadAudit = useCan("audit.read");
+  const canExportAssurance = useCan("assurance.export");
+  const canManagePolicy = useCan("policy.manage");
+  const canManageVerifiers = useCan("verifier.manage");
+  const canMessageVerifier = useCan("verifier.message");
+  const canManageFactors = useCan("factor.manage");
+  const canManageTeam = useCan("team.manage");
+  const canManageTenant = useCan("tenant.manage");
+
+  const canViewControls =
+    canManagePeriods ||
+    canReopenPeriods ||
+    canReadAudit ||
+    canExportAssurance;
+
+  const canViewOrganisation =
+    canManageTenant || canManageFacilities;
+
+  const canViewVerifiers =
+    canManageVerifiers || canMessageVerifier;
+
+  // Ensure an active organisation is selected once the list loads.
   useEffect(() => {
     if (portfolioClients.length === 0) return;
 
     const currentIsValid =
-      activeClientId !== null && portfolioClients.some((c) => c.id === activeClientId);
+      activeClientId !== null &&
+      portfolioClients.some((c) => c.id === activeClientId);
+
     if (!currentIsValid) {
       setActiveClient(portfolioClients[0].id);
     }
@@ -76,37 +118,171 @@ export function AppLayout({ children }: { children: ReactNode }) {
   };
 
   const handleSwitchClient = (id: string) => {
-    if (id !== activeClientId) clearAllUploads();
+    if (id !== activeClientId) {
+      clearAllUploads();
+    }
+
     setActiveClient(id);
-    if (location === "/clients") setLocation("/dashboard");
+
+    if (location === "/clients") {
+      setLocation("/dashboard");
+    }
   };
 
+  // Client/workspace navigation filtered by permission.
   const clientNavItems = [
-    { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-    { icon: Upload, label: "Uploads", href: "/uploads" },
-    { icon: Cloud, label: "Emissions", href: "/emissions" },
-    { icon: FileText, label: "Reports", href: "/reports" },
-    { icon: Leaf, label: "Offsets", href: "/offsets" },
-    { icon: Building, label: isSme ? "My Organisation" : "Client Profile", href: "/settings/organization" },
-    { icon: ClipboardList, label: "Controls", href: "/settings/controls" },
+    ...(canReadEmissions
+      ? [
+          {
+            icon: LayoutDashboard,
+            label: "Dashboard",
+            href: "/dashboard",
+          },
+        ]
+      : []),
+
+    ...(canReadEmissions || canUpload
+      ? [
+          {
+            icon: Upload,
+            label: "Uploads",
+            href: "/uploads",
+          },
+        ]
+      : []),
+
+    ...(canReadEmissions
+      ? [
+          {
+            icon: Cloud,
+            label: "Emissions",
+            href: "/emissions",
+          },
+          {
+            icon: FileText,
+            label: "Reports",
+            href: "/reports",
+          },
+        ]
+      : []),
+
+    // Offsets has no dedicated Phase A permission.
+    // Keep it available to administrators, not restricted members.
+    ...(canManageTenant
+      ? [
+          {
+            icon: Leaf,
+            label: "Offsets",
+            href: "/offsets",
+          },
+        ]
+      : []),
+
+    ...(canViewOrganisation
+      ? [
+          {
+            icon: Building,
+            label: isSme ? "My Organisation" : "Client Profile",
+            href: "/settings/organization",
+          },
+        ]
+      : []),
+
+    ...(canViewControls
+      ? [
+          {
+            icon: ClipboardList,
+            label: "Controls",
+            href: "/settings/controls",
+          },
+        ]
+      : []),
+
+    ...(isSme && canViewVerifiers
+      ? [
+          {
+            icon: ShieldCheck,
+            label: "Verifiers",
+            href: "/verifiers",
+          },
+        ]
+      : []),
+
     ...(isSme
       ? [
-          { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
-          { icon: UserSearch, label: "Find a consultant", href: "/find-consultants" },
-          { icon: Users, label: "Team", href: "/settings/users" },
+          {
+            icon: UserSearch,
+            label: "Find a consultant",
+            href: "/find-consultants",
+          },
         ]
-      : [{ icon: UserSearch, label: "Find a consultant", href: "/find-consultants" }]),
+      : []),
+
+    ...(isSme && canManageTeam
+      ? [
+          {
+            icon: Users,
+            label: "Team",
+            href: "/settings/users",
+          },
+        ]
+      : []),
   ];
 
-  const firmItems = hidePortfolio
-    ? []
-    : [
-        { icon: Scale, label: "Policy", href: "/policies" },
-        { icon: ShieldCheck, label: "Verifiers", href: "/verifiers" },
-        { icon: FileText, label: "Factor Library", href: "/settings/factors" },
-        { icon: Users, label: "Firm Team", href: "/settings/users" },
-        { icon: Building2, label: "Firm Settings", href: "/settings/firm" },
-      ];
+  // Consultant firm navigation.
+  const firmItems = !isSme
+    ? [
+        ...(canManagePolicy
+          ? [
+              {
+                icon: Scale,
+                label: "Policy",
+                href: "/policies",
+              },
+            ]
+          : []),
+
+        ...(canViewVerifiers
+          ? [
+              {
+                icon: ShieldCheck,
+                label: "Verifiers",
+                href: "/verifiers",
+              },
+            ]
+          : []),
+
+        ...(canManageFactors
+          ? [
+              {
+                icon: FileText,
+                label: "Factor Library",
+                href: "/settings/factors",
+              },
+            ]
+          : []),
+
+        ...(canManageTeam
+          ? [
+              {
+                icon: Users,
+                label: "Firm Team",
+                href: "/settings/users",
+              },
+            ]
+          : []),
+
+        ...(canManageTenant
+          ? [
+              {
+                icon: Building2,
+                label: "Firm Settings",
+                href: "/settings/firm",
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   const selectFy = (fy: ReportingFy) => {
     writeStoredReportingFy(fy.startYear);
@@ -115,40 +291,52 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="h-dvh bg-background flex flex-col md:flex-row overflow-hidden">
-      {/* Sidebar stays fixed to the viewport; only its own nav scrolls if needed */}
       <aside className="w-full md:w-64 md:h-full border-r bg-sidebar flex flex-col shrink-0 max-h-[45vh] md:max-h-none overflow-hidden">
         {/* Logo */}
         <div className="p-4 flex items-center gap-2 border-b h-16 shrink-0">
           <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
             <Cloud className="text-primary-foreground w-5 h-5" />
           </div>
+
           <div className="flex flex-col leading-tight">
-            <span className="font-semibold text-sm tracking-tight">Vayura AI</span>
+            <span className="font-semibold text-sm tracking-tight">
+              Vayura AI
+            </span>
             <span className="text-[11px] text-sidebar-foreground/60 truncate">
-              {isSme ? activeClient?.shortName ?? user?.company : tenant?.name ?? user?.company ?? "—"}
+              {isSme
+                ? activeClient?.shortName ?? user?.company
+                : tenant?.name ?? user?.company ?? "—"}
             </span>
           </div>
         </div>
 
-        {/* Consultant: client switcher | SME: org identity badge */}
+        {/* SME organisation identity */}
         {isSme ? (
           <div className="p-3 border-b shrink-0">
             <div className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md border bg-card text-left">
               <div className="w-8 h-8 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 bg-primary/10 text-primary">
                 {activeClient?.initials ?? "—"}
               </div>
+
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-[10px] font-medium text-sidebar-foreground/50 uppercase tracking-wider">Your organisation</span>
+                <span className="text-[10px] font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                  Your organisation
+                </span>
                 <span className="text-sm font-medium truncate leading-tight">
                   {activeClient?.shortName ?? user?.company}
                 </span>
               </div>
-              <Badge variant="outline" className="text-[10px] shrink-0 border-primary/20 text-primary bg-primary/10">
+
+              <Badge
+                variant="outline"
+                className="text-[10px] shrink-0 border-primary/20 text-primary bg-primary/10"
+              >
                 {activeClient?.country ?? "—"}
               </Badge>
             </div>
           </div>
         ) : (
+          /* Consultant client switcher */
           <div className="p-3 border-b shrink-0">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -156,29 +344,41 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   data-testid="button-client-switcher"
                   className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md border bg-card hover:bg-sidebar-accent/50 transition-colors text-left"
                 >
-                  <div className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 ${
-                    activeClient ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                  }`}>
+                  <div
+                    className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 ${
+                      activeClient
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
                     {activeClient?.initials ?? "—"}
                   </div>
+
                   <div className="flex flex-col flex-1 min-w-0">
-                    <span className="text-[10px] font-medium text-sidebar-foreground/50 uppercase tracking-wider">Active client</span>
+                    <span className="text-[10px] font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                      Active client
+                    </span>
                     <span className="text-sm font-medium truncate leading-tight">
                       {activeClient?.shortName ?? "Select a client"}
                     </span>
-                    {activeClient?.name && activeClient.name !== activeClient.shortName && (
-                      <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">
-                        {activeClient.name}
-                      </span>
-                    )}
+
+                    {activeClient?.name &&
+                      activeClient.name !== activeClient.shortName && (
+                        <span className="text-[10px] text-sidebar-foreground/60 truncate leading-tight">
+                          {activeClient.name}
+                        </span>
+                      )}
                   </div>
+
                   <ChevronsUpDown className="w-3.5 h-3.5 text-sidebar-foreground/50 shrink-0" />
                 </button>
               </DropdownMenuTrigger>
+
               <DropdownMenuContent align="start" className="w-64">
                 <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
                   Switch client ({portfolioClients.length})
                 </DropdownMenuLabel>
+
                 {portfolioClients.map((c) => (
                   <DropdownMenuItem
                     key={c.id}
@@ -189,18 +389,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <div className="w-6 h-6 rounded bg-primary/10 text-primary text-[10px] font-semibold flex items-center justify-center shrink-0">
                       {c.initials}
                     </div>
+
                     <div className="flex flex-col flex-1 min-w-0">
-                      <span className="text-sm font-medium truncate">{c.shortName}</span>
+                      <span className="text-sm font-medium truncate">
+                        {c.shortName}
+                      </span>
                       <span className="text-[11px] text-muted-foreground truncate">
                         {c.name}
                         {c.industry ? ` · ${c.industry}` : ""}
                       </span>
                     </div>
-                    {c.id === activeClientId && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+
+                    {c.id === activeClientId && (
+                      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+                    )}
                   </DropdownMenuItem>
                 ))}
+
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setLocation("/clients")} data-testid="menu-item-portfolio">
+
+                <DropdownMenuItem
+                  onClick={() => setLocation("/clients")}
+                  data-testid="menu-item-portfolio"
+                >
                   <ArrowLeftRight className="w-4 h-4 mr-2" />
                   Back to portfolio
                 </DropdownMenuItem>
@@ -211,10 +422,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
         <div className="flex-1 min-h-0 overflow-y-auto py-4">
           <nav className="px-3 space-y-1">
-            {/* Consultant-only: Portfolio section */}
+            {/* Consultant portfolio */}
             {!isSme && (
               <>
-                <div className="text-xs font-medium text-sidebar-foreground/50 px-3 mb-2 uppercase tracking-wider">Portfolio</div>
+                <div className="text-xs font-medium text-sidebar-foreground/50 px-3 mb-2 uppercase tracking-wider">
+                  Portfolio
+                </div>
+
                 <Link href="/clients">
                   <div
                     data-testid="nav-all-clients"
@@ -231,38 +445,55 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </>
             )}
 
-            {/* Active client nav */}
-            <div className="flex items-center justify-between px-3 mt-6 mb-2">
-              <span className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
-                {isSme ? "My workspace" : "Active client"}
-              </span>
-              {!isSme && !activeClient && <span className="text-[10px] text-muted-foreground">none</span>}
-            </div>
-            {clientNavItems.map((item) => {
-              const disabled = !isSme && !activeClient;
-              return (
-                <Link key={item.href} href={disabled ? "/clients" : item.href}>
-                  <div
-                    data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer ${
-                      disabled
-                        ? "text-sidebar-foreground/35 cursor-not-allowed"
-                        : location.startsWith(item.href)
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                    }`}
-                  >
-                    <item.icon className="w-4 h-4" />
-                    {item.label}
-                  </div>
-                </Link>
-              );
-            })}
-
-            {/* Consultant-only: Firm section */}
-            {!isSme && (
+            {/* Workspace navigation */}
+            {clientNavItems.length > 0 && (
               <>
-                <div className="text-xs font-medium text-sidebar-foreground/50 px-3 mt-6 mb-2 uppercase tracking-wider">Firm</div>
+                <div className="flex items-center justify-between px-3 mt-6 mb-2">
+                  <span className="text-xs font-medium text-sidebar-foreground/50 uppercase tracking-wider">
+                    {isSme ? "My workspace" : "Active client"}
+                  </span>
+
+                  {!isSme && !activeClient && (
+                    <span className="text-[10px] text-muted-foreground">
+                      none
+                    </span>
+                  )}
+                </div>
+
+                {clientNavItems.map((item) => {
+                  const disabled = !isSme && !activeClient;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={disabled ? "/clients" : item.href}
+                    >
+                      <div
+                        data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors cursor-pointer ${
+                          disabled
+                            ? "text-sidebar-foreground/35 cursor-not-allowed"
+                            : location.startsWith(item.href)
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        }`}
+                      >
+                        <item.icon className="w-4 h-4" />
+                        {item.label}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Consultant firm navigation */}
+            {firmItems.length > 0 && (
+              <>
+                <div className="text-xs font-medium text-sidebar-foreground/50 px-3 mt-6 mb-2 uppercase tracking-wider">
+                  Firm
+                </div>
+
                 {firmItems.map((item) => (
                   <Link key={item.href} href={item.href}>
                     <div
@@ -281,16 +512,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </>
             )}
 
-            {/* Invited SME under a consulting firm (not self-serve solo) */}
+            {/* Invited SME under a consulting firm */}
             {isSme && tenant && !tenant.smeSolo && user?.userType === "sme" && (
               <div className="mt-6 mx-1 p-3 rounded-md border bg-card">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Your advisor</div>
-                <div className="text-sm font-medium truncate">{tenant.name}</div>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                  Your advisor
+                </div>
+                <div className="text-sm font-medium truncate">
+                  {tenant.name}
+                </div>
               </div>
             )}
           </nav>
         </div>
 
+        {/* Sidebar user menu */}
         <div className="p-4 border-t shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -299,31 +535,62 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 className="flex items-center gap-3 cursor-pointer hover:bg-sidebar-accent/50 p-2 rounded-md transition-colors"
               >
                 <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xs">{user?.avatar || "U"}</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                    {user?.avatar || "U"}
+                  </AvatarFallback>
                 </Avatar>
+
                 <div className="flex flex-col flex-1 overflow-hidden">
-                  <span className="text-sm font-medium truncate">{user?.name}</span>
-                  <span className="text-xs text-sidebar-foreground/50 truncate">{user?.email}</span>
+                  <span className="text-sm font-medium truncate">
+                    {user?.name}
+                  </span>
+                  <span className="text-xs text-sidebar-foreground/50 truncate">
+                    {user?.email}
+                  </span>
                 </div>
               </div>
             </DropdownMenuTrigger>
+
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.name}</p>
-                  <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-                  <p className="text-xs leading-none text-muted-foreground mt-0.5">{user?.company}</p>
+                  <p className="text-sm font-medium leading-none">
+                    {user?.name}
+                  </p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {user?.email}
+                  </p>
+                  <p className="text-xs leading-none text-muted-foreground mt-0.5">
+                    {user?.company}
+                  </p>
                 </div>
               </DropdownMenuLabel>
+
               <DropdownMenuSeparator />
-              {!isSme && (
-                <DropdownMenuItem onClick={() => setLocation("/settings/firm")}>Firm Settings</DropdownMenuItem>
+
+              {!isSme && canManageTenant && (
+                <DropdownMenuItem
+                  onClick={() => setLocation("/settings/firm")}
+                >
+                  Firm Settings
+                </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => setLocation("/settings/organization")}>
-                {isSme ? "My Organisation" : "Client Profile"}
-              </DropdownMenuItem>
+
+              {canViewOrganisation && (
+                <DropdownMenuItem
+                  onClick={() => setLocation("/settings/organization")}
+                >
+                  {isSme ? "My Organisation" : "Client Profile"}
+                </DropdownMenuItem>
+              )}
+
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive" data-testid="button-logout">
+
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="text-destructive"
+                data-testid="button-logout"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Log out</span>
               </DropdownMenuItem>
@@ -332,15 +599,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Main Content — header fixed, page body scrolls */}
+      {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <header className="h-16 border-b bg-card flex items-center justify-between px-4 lg:px-8 shrink-0 gap-4">
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {activeClient && location !== "/clients" && (
               <div className="hidden lg:flex items-center gap-2 text-sm text-muted-foreground shrink-0">
                 <Briefcase className="w-3.5 h-3.5" />
-                <span>{isSme ? activeClient.shortName : activeClient.name}</span>
+
+                <span>
+                  {isSme ? activeClient.shortName : activeClient.name}
+                </span>
+
                 <span className="text-muted-foreground/40">/</span>
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -353,48 +625,94 @@ export function AppLayout({ children }: { children: ReactNode }) {
                       <ChevronsUpDown className="ml-1 h-3.5 w-3.5 opacity-50" />
                     </Button>
                   </DropdownMenuTrigger>
+
                   <DropdownMenuContent align="start">
-                    <DropdownMenuLabel>Reporting year (Apr–Mar)</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      Reporting year (Apr–Mar)
+                    </DropdownMenuLabel>
+
                     <DropdownMenuSeparator />
+
                     {fyOptions.map((fy) => (
-                      <DropdownMenuItem key={fy.startYear} onClick={() => selectFy(fy)}>
+                      <DropdownMenuItem
+                        key={fy.startYear}
+                        onClick={() => selectFy(fy)}
+                      >
                         <Check
-                          className={`mr-2 h-3.5 w-3.5 ${fy.startYear === reportingFy.startYear ? "opacity-100" : "opacity-0"}`}
+                          className={`mr-2 h-3.5 w-3.5 ${
+                            fy.startYear === reportingFy.startYear
+                              ? "opacity-100"
+                              : "opacity-0"
+                          }`}
                         />
                         {fy.label}
                       </DropdownMenuItem>
                     ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setLocation("/settings/controls")}>
-                      Period close &amp; audit…
-                    </DropdownMenuItem>
+
+                    {canViewControls && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => setLocation("/settings/controls")}
+                        >
+                          Period close &amp; audit…
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             )}
           </div>
+
           <div className="flex items-center gap-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full" data-testid="button-avatar-menu">
+                <Button
+                  variant="ghost"
+                  className="relative h-8 w-8 rounded-full"
+                  data-testid="button-avatar-menu"
+                >
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-primary/10 text-primary text-xs">{user?.avatar || "U"}</AvatarFallback>
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                      {user?.avatar || "U"}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
+
+              <DropdownMenuContent
+                className="w-56"
+                align="end"
+                forceMount
+              >
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.name}</p>
-                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                    <p className="text-sm font-medium leading-none">
+                      {user?.name}
+                    </p>
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user?.email}
+                    </p>
                   </div>
                 </DropdownMenuLabel>
+
                 <DropdownMenuSeparator />
-                {!isSme && (
-                  <DropdownMenuItem onClick={() => setLocation("/settings/firm")}>Firm settings</DropdownMenuItem>
+
+                {!isSme && canManageTenant && (
+                  <DropdownMenuItem
+                    onClick={() => setLocation("/settings/firm")}
+                  >
+                    Firm settings
+                  </DropdownMenuItem>
                 )}
+
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="text-destructive"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Log out</span>
                 </DropdownMenuItem>

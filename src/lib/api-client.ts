@@ -1,7 +1,19 @@
-const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 
-export type ApiSuccess<T> = { success: true; data: T };
-export type ApiErrorBody = { success: false; error: { code: string; message: string } };
+const baseUrl =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+export type ApiSuccess<T> = {
+  success: true;
+  data: T;
+};
+
+export type ApiErrorBody = {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+  };
+};
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -9,60 +21,86 @@ export class ApiRequestError extends Error {
 
   constructor(status: number, code: string, message: string) {
     super(message);
-    this.name = 'ApiRequestError';
+    this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
   if (!baseUrl) {
-    throw new Error('VITE_API_BASE_URL is not set. Copy .env.example to .env.local.');
+    throw new Error(
+      "VITE_API_BASE_URL is not set. Copy .env.example to .env.local.",
+    );
   }
-  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+
+  const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
   const headers = new Headers(init?.headers);
+
   if (
-    !headers.has('Content-Type') &&
+    !headers.has("Content-Type") &&
     init?.body !== undefined &&
     !(init.body instanceof FormData)
   ) {
-    headers.set('Content-Type', 'application/json');
+    headers.set("Content-Type", "application/json");
   }
+
   const res = await fetch(url, {
     ...init,
     headers,
-    credentials: 'include',
-    cache: 'no-store',
+    credentials: "include",
+    cache: "no-store",
   });
+
   const json: unknown = await res.json().catch(() => null);
+
   if (!res.ok) {
     const err = json as Partial<ApiErrorBody> | null;
+
     const code =
       err?.error?.code ??
-      (res.status === 401 ? 'UNAUTHORIZED' : res.status === 402 ? 'PAYMENT_REQUIRED' : 'UNKNOWN');
-    if (res.status === 402 && typeof window !== 'undefined') {
-      const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
-      const billingPath = `${base}/billing`.replace(/([^:]\/)\/+/g, '$1');
-      if (!window.location.pathname.endsWith('/billing')) {
+      (res.status === 401
+        ? "UNAUTHORIZED"
+        : res.status === 402
+          ? "PAYMENT_REQUIRED"
+          : "UNKNOWN");
+
+    if (res.status === 402 && typeof window !== "undefined") {
+      const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+      const billingPath = `${base}/billing`.replace(/([^:]\/)\/+/g, "$1");
+
+      if (!window.location.pathname.endsWith("/billing")) {
         window.location.assign(billingPath);
       }
     }
+
     const message =
       err?.error?.message ??
       (res.status === 409
-        ? 'This resource already exists.'
+        ? "This resource already exists."
         : res.status === 401
-          ? 'You are not authorized to perform this action.'
+          ? "You are not authorized to perform this action."
           : res.status === 402
-            ? 'Complete subscription billing before using this workspace.'
+            ? "Complete subscription billing before using this workspace."
             : res.status >= 500
-              ? 'Something went wrong on our side. Please try again in a moment.'
-              : res.statusText || 'Request failed.');
+              ? "Something went wrong on our side. Please try again in a moment."
+              : res.statusText || "Request failed.");
+
     throw new ApiRequestError(res.status, code, message);
   }
+
   const body = json as ApiSuccess<T> | null;
+
   if (!body?.success) {
-    throw new ApiRequestError(res.status, 'INVALID_RESPONSE', 'Unexpected response shape.');
+    throw new ApiRequestError(
+      res.status,
+      "INVALID_RESPONSE",
+      "Unexpected response shape.",
+    );
   }
+
   return body.data;
 }

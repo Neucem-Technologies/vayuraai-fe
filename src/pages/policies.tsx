@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, RefreshCw, Scale } from "lucide-react";
@@ -17,7 +18,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
-import { useIsConsultantAdmin } from "@/hooks/use-auth";
+import { useCan } from "@/hooks/use-auth";
 import { ApiRequestError } from "@/lib/api-client";
 import {
   createSuggestion,
@@ -47,6 +48,7 @@ const STATUS_LABEL: Record<SuggestionStatus, string> = {
 
 function formatDay(isoDate: string) {
   const [year, month, day] = isoDate.slice(0, 10).split("-").map(Number);
+
   return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
@@ -66,13 +68,18 @@ function formatChecked(iso: string) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof ApiRequestError ? error.message : "Something went wrong. Try again.";
+  return error instanceof ApiRequestError
+    ? error.message
+    : "Something went wrong. Try again.";
 }
 
 export default function Policies() {
   const queryClient = useQueryClient();
-  const isAdmin = useIsConsultantAdmin();
-  const [jurisdiction, setJurisdiction] = useState<(typeof JURISDICTIONS)[number]>("All");
+
+  const canManagePolicy = useCan("policy.manage");
+
+  const [jurisdiction, setJurisdiction] =
+    useState<(typeof JURISDICTIONS)[number]>("All");
   const [target, setTarget] = useState<SuggestionTarget>("policy");
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
@@ -81,6 +88,7 @@ export default function Policies() {
     queryKey: ["policies"],
     queryFn: listPolicies,
   });
+
   const suggestionsQuery = useQuery({
     queryKey: ["policy-suggestions"],
     queryFn: listSuggestions,
@@ -92,7 +100,12 @@ export default function Policies() {
       queryClient.setQueryData(["policies"], data);
       toast({ title: "Policy brief updated" });
     },
-    onError: (error) => toast({ title: "Could not refresh", description: errorMessage(error), variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Could not refresh",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   const suggest = useMutation({
@@ -100,24 +113,63 @@ export default function Policies() {
     onSuccess: async () => {
       setTitle("");
       setDetails("");
-      await queryClient.invalidateQueries({ queryKey: ["policy-suggestions"] });
-      toast({ title: "Suggestion sent", description: "Your firm can review it from this page." });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["policy-suggestions"],
+      });
+
+      toast({
+        title: "Suggestion sent",
+        description: "Your firm can review it from this page.",
+      });
     },
-    onError: (error) => toast({ title: "Could not send suggestion", description: errorMessage(error), variant: "destructive" }),
+    onError: (error) =>
+      toast({
+        title: "Could not send suggestion",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   const review = useMutation({
-    mutationFn: ({ id, ...input }: { id: string; status: SuggestionStatus; reviewNote?: string }) =>
-      reviewSuggestion(id, input),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["policy-suggestions"] });
+    mutationFn: ({
+      id,
+      ...input
+    }: {
+      id: string;
+      status: SuggestionStatus;
+      reviewNote?: string;
+    }) => {
+      if (!canManagePolicy) {
+        throw new Error(
+          "You do not have permission to review policy suggestions.",
+        );
+      }
+
+      return reviewSuggestion(id, input);
     },
-    onError: (error) => toast({ title: "Could not update suggestion", description: errorMessage(error), variant: "destructive" }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["policy-suggestions"],
+      });
+
+      toast({ title: "Suggestion updated" });
+    },
+    onError: (error) =>
+      toast({
+        title: "Could not update suggestion",
+        description: errorMessage(error),
+        variant: "destructive",
+      }),
   });
 
   const items = policiesQuery.data?.items ?? [];
+
   const visible = useMemo(
-    () => (jurisdiction === "All" ? items : items.filter((item) => item.jurisdiction === jurisdiction)),
+    () =>
+      jurisdiction === "All"
+        ? items
+        : items.filter((item) => item.jurisdiction === jurisdiction),
     [items, jurisdiction],
   );
 
@@ -133,15 +185,21 @@ export default function Policies() {
             disabled={refresh.isPending || policiesQuery.isLoading}
             data-testid="button-refresh-policies"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 ${refresh.isPending ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${
+                refresh.isPending ? "animate-spin" : ""
+              }`}
+            />
             Refresh brief
           </Button>
         }
       />
 
       <p className="text-sm text-muted-foreground -mt-2 mb-6">
-        This is Vayura’s brief, with a link to each official source.
-        {policiesQuery.data?.checkedAt ? ` Last checked ${formatChecked(policiesQuery.data.checkedAt)}.` : ""}
+        This is Vayura's brief, with a link to each official source.
+        {policiesQuery.data?.checkedAt
+          ? ` Last checked ${formatChecked(policiesQuery.data.checkedAt)}.`
+          : ""}
       </p>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
@@ -153,7 +211,9 @@ export default function Policies() {
                 size="sm"
                 variant={jurisdiction === option ? "default" : "outline"}
                 onClick={() => setJurisdiction(option)}
-                data-testid={`filter-${option.toLowerCase().replace(/\s+/g, "-")}`}
+                data-testid={`filter-${option
+                  .toLowerCase()
+                  .replace(/\s+/g, "-")}`}
               >
                 {option}
               </Button>
@@ -169,7 +229,11 @@ export default function Policies() {
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">
                 The policy brief could not be loaded.{" "}
-                <button className="underline" type="button" onClick={() => policiesQuery.refetch()}>
+                <button
+                  className="underline"
+                  type="button"
+                  onClick={() => policiesQuery.refetch()}
+                >
                   Try again
                 </button>
               </CardContent>
@@ -177,7 +241,8 @@ export default function Policies() {
           ) : visible.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-sm text-muted-foreground">
-                Nothing in this jurisdiction yet. Choose All to see the full brief.
+                Nothing in this jurisdiction yet. Choose All to see the full
+                brief.
               </CardContent>
             </Card>
           ) : (
@@ -194,24 +259,41 @@ export default function Policies() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Suggest a change</CardTitle>
             </CardHeader>
+
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Ask for a policy we should cover, or a factor the library is missing. Your firm administrator reviews it here.
+                Ask for a policy we should cover, or a factor the library is
+                missing. Your firm administrator reviews it here.
               </p>
+
               <div className="space-y-1.5">
                 <Label htmlFor="suggestion-target">This is about</Label>
-                <Select value={target} onValueChange={(value) => setTarget(value as SuggestionTarget)}>
-                  <SelectTrigger id="suggestion-target" data-testid="select-suggestion-target">
+
+                <Select
+                  value={target}
+                  onValueChange={(value) =>
+                    setTarget(value as SuggestionTarget)
+                  }
+                >
+                  <SelectTrigger
+                    id="suggestion-target"
+                    data-testid="select-suggestion-target"
+                  >
                     <SelectValue />
                   </SelectTrigger>
+
                   <SelectContent>
                     <SelectItem value="policy">Policy brief</SelectItem>
-                    <SelectItem value="factor_library">Factor library</SelectItem>
+                    <SelectItem value="factor_library">
+                      Factor library
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="suggestion-title">Title</Label>
+
                 <Input
                   id="suggestion-title"
                   value={title}
@@ -221,8 +303,12 @@ export default function Policies() {
                   data-testid="input-suggestion-title"
                 />
               </div>
+
               <div className="space-y-1.5">
-                <Label htmlFor="suggestion-details">What should we look at?</Label>
+                <Label htmlFor="suggestion-details">
+                  What should we look at?
+                </Label>
+
                 <Textarea
                   id="suggestion-details"
                   value={details}
@@ -233,10 +319,21 @@ export default function Policies() {
                   data-testid="input-suggestion-details"
                 />
               </div>
+
               <Button
                 className="w-full"
-                disabled={suggest.isPending || title.trim().length < 3 || details.trim().length < 10}
-                onClick={() => suggest.mutate({ target, title: title.trim(), details: details.trim() })}
+                disabled={
+                  suggest.isPending ||
+                  title.trim().length < 3 ||
+                  details.trim().length < 10
+                }
+                onClick={() =>
+                  suggest.mutate({
+                    target,
+                    title: title.trim(),
+                    details: details.trim(),
+                  })
+                }
                 data-testid="button-send-suggestion"
               >
                 {suggest.isPending ? "Sending…" : "Send suggestion"}
@@ -246,28 +343,42 @@ export default function Policies() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Your firm’s suggestions</CardTitle>
+              <CardTitle className="text-base">
+                Your firm's suggestions
+              </CardTitle>
             </CardHeader>
+
             <CardContent className="space-y-3">
               {suggestionsQuery.isLoading ? (
                 <Skeleton className="h-20 w-full" />
               ) : suggestionsQuery.isError ? (
                 <p className="text-sm text-muted-foreground">
                   Suggestions could not be loaded.{" "}
-                  <button className="underline" type="button" onClick={() => suggestionsQuery.refetch()}>
+                  <button
+                    className="underline"
+                    type="button"
+                    onClick={() => suggestionsQuery.refetch()}
+                  >
                     Try again
                   </button>
                 </p>
               ) : (suggestionsQuery.data?.suggestions.length ?? 0) === 0 ? (
-                <p className="text-sm text-muted-foreground">No suggestions yet. A short note is enough to start one.</p>
+                <p className="text-sm text-muted-foreground">
+                  No suggestions yet. A short note is enough to start one.
+                </p>
               ) : (
                 suggestionsQuery.data?.suggestions.map((suggestion) => (
                   <SuggestionRow
                     key={suggestion.id}
                     suggestion={suggestion}
-                    canReview={isAdmin}
+                    canReview={canManagePolicy}
                     pending={review.isPending}
-                    onReview={(input) => review.mutate({ id: suggestion.id, ...input })}
+                    onReview={(input) =>
+                      review.mutate({
+                        id: suggestion.id,
+                        ...input,
+                      })
+                    }
                   />
                 ))
               )}
@@ -286,20 +397,33 @@ function PolicyCard({ item }: { item: PolicyUpdate }) {
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <Badge variant="outline">{item.jurisdiction}</Badge>
           <Badge variant="secondary">{item.topic}</Badge>
-          <Badge variant={item.stage === "In progress" ? "outline" : "default"}>{item.stage}</Badge>
-          <span className="text-xs text-muted-foreground ml-auto">{formatDay(item.publishedOn)}</span>
+          <Badge
+            variant={item.stage === "In progress" ? "outline" : "default"}
+          >
+            {item.stage}
+          </Badge>
+
+          <span className="text-xs text-muted-foreground ml-auto">
+            {formatDay(item.publishedOn)}
+          </span>
         </div>
+
         <CardTitle className="text-base flex items-start gap-2">
           <Scale className="w-4 h-4 mt-0.5 shrink-0 text-primary" />
           {item.title}
         </CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-3 text-sm">
         <p className="text-foreground/90">{item.summary}</p>
+
         <p className="text-muted-foreground">
-          <span className="font-medium text-foreground">What this means. </span>
+          <span className="font-medium text-foreground">
+            What this means.{" "}
+          </span>
           {item.implication}
         </p>
+
         <a
           href={item.sourceUrl}
           target="_blank"
@@ -323,36 +447,62 @@ function SuggestionRow({
   suggestion: LibrarySuggestion;
   canReview: boolean;
   pending: boolean;
-  onReview: (input: { status: SuggestionStatus; reviewNote?: string }) => void;
+  onReview: (input: {
+    status: SuggestionStatus;
+    reviewNote?: string;
+  }) => void;
 }) {
   const [note, setNote] = useState(suggestion.reviewNote);
+
   useEffect(() => {
     setNote(suggestion.reviewNote);
   }, [suggestion.reviewNote, suggestion.status]);
 
   return (
-    <div className="rounded-md border p-3 space-y-2" data-testid={`suggestion-${suggestion.id}`}>
+    <div
+      className="rounded-md border p-3 space-y-2"
+      data-testid={`suggestion-${suggestion.id}`}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{TARGET_LABEL[suggestion.target]}</Badge>
-        <Badge variant={suggestion.status === "accepted" ? "default" : "secondary"}>
+        <Badge variant="outline">
+          {TARGET_LABEL[suggestion.target]}
+        </Badge>
+
+        <Badge
+          variant={
+            suggestion.status === "accepted" ? "default" : "secondary"
+          }
+        >
           {STATUS_LABEL[suggestion.status]}
         </Badge>
       </div>
+
       <p className="text-sm font-medium">{suggestion.title}</p>
-      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{suggestion.details}</p>
+
+      <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+        {suggestion.details}
+      </p>
+
       <p className="text-xs text-muted-foreground">
         {suggestion.authorName} · {formatChecked(suggestion.createdAt)}
       </p>
+
       {canReview ? (
         <div className="space-y-2 pt-1">
           <Select
             value={suggestion.status}
-            onValueChange={(value) => onReview({ status: value as SuggestionStatus, reviewNote: note })}
+            onValueChange={(value) =>
+              onReview({
+                status: value as SuggestionStatus,
+                reviewNote: note,
+              })
+            }
             disabled={pending}
           >
             <SelectTrigger data-testid={`select-status-${suggestion.id}`}>
               <SelectValue />
             </SelectTrigger>
+
             <SelectContent>
               <SelectItem value="submitted">Sent</SelectItem>
               <SelectItem value="in_review">In review</SelectItem>
@@ -360,6 +510,7 @@ function SuggestionRow({
               <SelectItem value="declined">Declined</SelectItem>
             </SelectContent>
           </Select>
+
           <Textarea
             value={note}
             rows={2}
@@ -368,18 +519,26 @@ function SuggestionRow({
             onChange={(event) => setNote(event.target.value)}
             data-testid={`input-note-${suggestion.id}`}
           />
+
           <Button
             size="sm"
             variant="outline"
             disabled={pending || note.trim() === suggestion.reviewNote}
-            onClick={() => onReview({ status: suggestion.status, reviewNote: note.trim() })}
+            onClick={() =>
+              onReview({
+                status: suggestion.status,
+                reviewNote: note.trim(),
+              })
+            }
           >
             Save note
           </Button>
         </div>
       ) : suggestion.reviewNote ? (
         <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Review note. </span>
+          <span className="font-medium text-foreground">
+            Review note.{" "}
+          </span>
           {suggestion.reviewNote}
         </p>
       ) : null}

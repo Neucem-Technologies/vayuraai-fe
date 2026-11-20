@@ -110,18 +110,19 @@ export function usePortfolioStats() {
   });
 }
 
-export function useEmissions() {
+export function useEmissions(enabled = true) {
   const orgId = useActiveClientStore((s) => s.activeClientId);
   const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
   return useQuery({
-    queryKey: ['emissions', tenantId, orgId, isAuthenticated],
+    queryKey: ["emissions", tenantId, orgId, isAuthenticated],
     queryFn: async () => {
-      if (!orgId || !hasSession() || !isAuthenticated) return [];
+      if (!orgId || !hasSession() || !isAuthenticated || !enabled) return [];
       const records = await listActivityRecords(orgId);
       return records.map(activityRecordToEmission);
     },
-    enabled: !!orgId && isAuthenticated,
+    enabled: !!orgId && isAuthenticated && enabled,
   });
 }
 

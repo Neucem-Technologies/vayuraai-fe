@@ -1,3 +1,4 @@
+
 import { apiFetch } from '@/lib/api-client';
 import { parseMeProfile } from '@/lib/api-contracts/parse';
 import type {
@@ -37,6 +38,20 @@ export async function login(email: string, password: string): Promise<AuthLoginR
   return apiFetch<AuthLoginResponse>('/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function verifyEmail(token: string): Promise<{ verified: boolean }> {
+  return apiFetch<{ verified: boolean }>('/api/v1/auth/verify-email', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function resendVerification(email: string): Promise<{ accepted: boolean }> {
+  return apiFetch<{ accepted: boolean }>('/api/v1/auth/resend-verification', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
   });
 }
 

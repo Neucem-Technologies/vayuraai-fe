@@ -1,3 +1,4 @@
+
 import { Link } from "wouter";
 import {
   Activity,
@@ -31,9 +32,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useDashboardStats } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
-import { useAuthStore, useIsSmeWorkspace } from "@/hooks/use-auth";
+import { useCan, useIsSmeWorkspace } from "@/hooks/use-auth";
 import { formatEmissions } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
+
 
 const SCOPE_COLORS = [
   "hsl(var(--chart-1))",
@@ -87,9 +89,6 @@ function ChartPlaceholder({ title, description }: { title: string; description: 
       <Cloud className="w-8 h-8 text-muted-foreground/50 mb-3" />
       <p className="text-sm font-medium text-foreground">{title}</p>
       <p className="text-xs text-muted-foreground mt-1 max-w-sm">{description}</p>
-      <Button variant="outline" size="sm" className="mt-4" asChild>
-        <Link href="/uploads">Go to uploads</Link>
-      </Button>
     </div>
   );
 }
@@ -97,9 +96,8 @@ function ChartPlaceholder({ title, description }: { title: string; description: 
 export default function Dashboard() {
   const { data, isLoading } = useDashboardStats();
   const activeClient = useActiveClient();
-  const tenant = useAuthStore((s) => s.tenant);
-  const user = useAuthStore((s) => s.user);
   const isSme = useIsSmeWorkspace();
+  const canUpload = useCan("upload.write");
 
   if (isLoading || !data) {
     return (
@@ -128,12 +126,14 @@ export default function Dashboard() {
         title="Dashboard"
         subtitle={`Overview for ${clientLabel}`}
         actions={
-          <Button size="sm" asChild>
-            <Link href="/uploads">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload documents
-            </Link>
-          </Button>
+          canUpload ? (
+            <Button size="sm" asChild>
+              <Link href="/uploads">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload documents
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -145,9 +145,11 @@ export default function Dashboard() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Upload bills and review activity lines.
               </p>
-              <Button asChild variant="link" className="h-auto px-0 pt-2">
-                <Link href="/uploads">Go to uploads</Link>
-              </Button>
+              {canUpload && (
+                  <Button asChild variant="link" className="h-auto px-0 pt-2">
+                   <Link href="/uploads">Go to uploads</Link>
+                  </Button>
+              )}
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">2. Download</p>
@@ -406,11 +408,16 @@ export default function Dashboard() {
         <CardContent>
           {data.activity.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">
-              No uploads yet.{" "}
-              <Link href="/uploads" className="text-primary font-medium hover:underline">
-                Upload your first document
-              </Link>
-            </div>
+             No uploads yet.{" "}
+             {canUpload && (
+               <Link
+                href="/uploads"
+                className="text-primary font-medium hover:underline"
+               >
+                 Upload your first document
+               </Link>
+             )}
+          </div>
           ) : (
             <div className="divide-y">
               {data.activity.map((a) => (

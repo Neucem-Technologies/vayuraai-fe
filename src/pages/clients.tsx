@@ -8,7 +8,7 @@ import { useClients, usePortfolioStats } from "@/hooks/use-data";
 import { createOrganisation } from "@/lib/organisations-api";
 import { ApiRequestError } from "@/lib/api-client";
 import { useActiveClientStore } from "@/hooks/use-active-client";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useCan } from "@/hooks/use-auth";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -116,6 +116,7 @@ export default function Clients() {
   const [, setLocation] = useLocation();
   const { setActiveClient } = useActiveClientStore();
   const refreshSession = useAuthStore((s) => s.refreshSession);
+  const canCreateOrg = useCan("org.create");
   const queryClient = useQueryClient();
   const { data: clients, isLoading } = useClients();
   const { data: stats } = usePortfolioStats();
@@ -165,6 +166,8 @@ export default function Clients() {
   });
 
   async function onAddClient(values: z.infer<typeof addClientSchema>) {
+    if (!canCreateOrg) return;
+
     setAdding(true);
     try {
       await createClient.mutateAsync(values);
@@ -203,10 +206,12 @@ export default function Clients() {
         title="Client portfolio"
         subtitle="All organizations your firm is currently engaged with"
         actions={
-          <Button data-testid="button-add-client" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add client
-          </Button>
+          canCreateOrg ? (
+            <Button data-testid="button-add-client" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add client
+            </Button>
+          ) : null
         }
       />
 
@@ -464,7 +469,7 @@ export default function Clients() {
                 <Button type="button" variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={adding}>
+                <Button type="submit" disabled={!canCreateOrg || adding}>
                   {adding ? "Adding client..." : "Add client"}
                 </Button>
               </DialogFooter>
