@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useLocation, Link } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -50,6 +51,7 @@ import { EmissionFactorSelect } from "@/components/emission-factor-select";
 import { type ConfidenceLevel, type ExtractedLineItem, type EmissionFactor } from "@/lib/mock-data";
 import { mergeFactorOptions } from "@/lib/factor-options";
 import { useActiveClientStore } from "@/hooks/use-active-client-store";
+import { useCan } from "@/hooks/use-auth";
 import { uploadDtoToDoc } from "@/lib/upload-mapper";
 import {
   approveUpload,
@@ -116,6 +118,7 @@ function ConfidenceDot({ level }: { level: ConfidenceLevel }) {
     medium: { color: "bg-amber-500", label: "Medium" },
     low: { color: "bg-red-500", label: "Low" },
   } as const;
+
   return (
     <div className="flex items-center gap-1.5">
       <span className={cn("w-2 h-2 rounded-full", map[level].color)} />
@@ -129,6 +132,11 @@ export default function Processing() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const orgId = useActiveClientStore((s) => s.activeClientId);
+
+  const canWriteReview = useCan("review.write");
+  const canApproveReview = useCan("review.approve");
+  const canManageFacilities = useCan("facility.manage");
+
   const { data: client } = useClient(orgId);
   const { data: detail, isLoading } = useUploadDetail(params.id);
   const live = useIngestionLiveStore((s) => (params.id ? s.byUpload[params.id] : undefined));
@@ -138,11 +146,14 @@ export default function Processing() {
     () => inferReportingYear(detail?.lineItems.map((l) => l.date) ?? []),
     [detail?.lineItems],
   );
+
   const { data: libraryFactors = [] } = useFactors({
-    region: client?.country ?? 'India',
+    region: client?.country ?? "India",
     year: reportingYear,
   });
+
   const { data: orgFacilities = [] } = useFacilities();
+
   const [addFacilityOpen, setAddFacilityOpen] = useState(false);
   const [facilityTargetLineId, setFacilityTargetLineId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -165,6 +176,7 @@ export default function Processing() {
 
   const initialItems = useMemo((): ReviewLineItem[] => {
     if (!detail?.lineItems.length) return [];
+
     return detail.lineItems.map((line) => ({
       id: line.id,
       rowIndex: line.rowIndex,
@@ -189,26 +201,34 @@ export default function Processing() {
 
   const [items, setItems] = useState<ReviewLineItem[]>([]);
   const [page, setPage] = useState(1);
-  const [dirty, setDirty] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
 
   const facilityOptions = useMemo(() => {
     const names = new Set<string>([ORGANISATION_WIDE_FACILITY]);
+
     for (const f of operationalFacilities(orgFacilities)) names.add(f.name);
+
     const uploadLabel = detail?.upload.facilityLabel?.trim();
     if (uploadLabel) names.add(uploadLabel);
+
     for (const item of items) {
       if (item.facility?.trim()) names.add(item.facility.trim());
     }
+
     return Array.from(names);
   }, [orgFacilities, detail?.upload.facilityLabel, items]);
 
   const isApproved = Boolean(detail?.upload.reviewedAt);
-  const canReview =
+
+  const reviewAvailable =
     !isApproved &&
-    (detail?.upload.status === "needs_review" || detail?.upload.status === "completed") &&
+    (detail?.upload.status === "needs_review" ||
+      detail?.upload.status === "completed") &&
     items.length > 0;
+
+  const canEditReview = reviewAvailable && canWriteReview;
+  const canApprove = reviewAvailable && canApproveReview;
 
   const toReviewPayload = (rows: ReviewLineItem[]): ReviewLineInput[] =>
     rows.map((item, index) => ({
@@ -230,11 +250,14 @@ export default function Processing() {
 
   const saveReviewMutation = useMutation({
     mutationFn: () => {
+      if (!canEditReview) {
+        throw new Error("You do not have permission to edit this review.");
+      }
       if (!orgId || !params.id) throw new Error("Missing upload context");
+
       return saveUploadReview(orgId, params.id, { lines: toReviewPayload(items) });
     },
     onSuccess: () => {
-      setDirty(false);
       invalidateUploadDetail(queryClient, orgId, params.id);
       toast.success("Review saved", {
         description: "Your edits are saved. Approve when you are ready to post to the ledger.",
@@ -247,11 +270,14 @@ export default function Processing() {
 
   const approveMutation = useMutation({
     mutationFn: () => {
+      if (!canApprove) {
+        throw new Error("You do not have permission to approve this upload.");
+      }
       if (!orgId || !params.id) throw new Error("Missing upload context");
+
       return approveUpload(orgId, params.id, { lines: toReviewPayload(items) });
     },
     onSuccess: (data) => {
-      setDirty(false);
       invalidateOrgWorkspace(queryClient, orgId);
       invalidateUploadDetail(queryClient, orgId, params.id);
       toast.success("Approved and posted", {
@@ -269,9 +295,16 @@ export default function Processing() {
 
   const rejectMutation = useMutation({
     mutationFn: () => {
+      if (!canApprove) {
+        throw new Error("You do not have permission to reject this upload.");
+      }
       if (!orgId || !params.id) throw new Error("Missing upload context");
+
       const reason = rejectReason.trim();
-      if (reason.length < 3) throw new Error("Add a short reason (at least 3 characters).");
+      if (reason.length < 3) {
+        throw new Error("Add a short reason (at least 3 characters).");
+      }
+
       return rejectUpload(orgId, params.id, { reason });
     },
     onSuccess: () => {
@@ -292,8 +325,8 @@ export default function Processing() {
   useEffect(() => {
     setItems(initialItems);
     setPage(1);
-    setDirty(false);
   }, [initialItems]);
+
   const PAGE_SIZE = 8;
 
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
@@ -303,7 +336,7 @@ export default function Processing() {
   const highCount = items.filter((i) => i.confidence === "high").length;
 
   const updateItem = (id: string, patch: Partial<typeof items[number]>) => {
-    setDirty(true);
+    if (!canEditReview) return;
     setItems((cur) => cur.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   };
 
@@ -321,17 +354,17 @@ export default function Processing() {
   }
 
   const isProcessing =
-    (live?.uploadStatus ?? detail?.upload.status) === "queued" ||
-    (live?.uploadStatus ?? detail?.upload.status) === "processing";
+    (live?.uploadStatus ?? detail.upload.status) === "queued" ||
+    (live?.uploadStatus ?? detail.upload.status) === "processing";
 
   const pipelineCompleted =
-    detail?.upload.status === "completed" ||
-    detail?.upload.status === "needs_review" ||
+    detail.upload.status === "completed" ||
+    detail.upload.status === "needs_review" ||
     live?.uploadStatus === "completed" ||
     live?.uploadStatus === "needs_review";
 
   const isFailed =
-    detail?.upload.status === "failed" || live?.uploadStatus === "failed";
+    detail.upload.status === "failed" || live?.uploadStatus === "failed";
 
   const activeStepLabel = live?.stepLabel;
 
@@ -346,10 +379,14 @@ export default function Processing() {
 
   const openPreview = async () => {
     if (!orgId || !params.id) return;
+
     setPreviewLoading(true);
+
     try {
       const content = await fetchUploadContent(orgId, params.id);
+
       if (previewUrl) URL.revokeObjectURL(previewUrl);
+
       setPreviewUrl(content.objectUrl);
       setPreviewBlob(content.blob);
       setPreviewMime(content.mimeType);
@@ -370,12 +407,15 @@ export default function Processing() {
 
   const downloadOriginal = async () => {
     if (!orgId || !params.id) return;
+
     try {
       const content = await fetchUploadContent(orgId, params.id, { download: true });
       const a = document.createElement("a");
+
       a.href = content.objectUrl;
       a.download = content.filename;
       a.click();
+
       URL.revokeObjectURL(content.objectUrl);
     } catch (e) {
       toast.error("Download failed", {
@@ -422,7 +462,9 @@ export default function Processing() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-semibold tracking-tight text-foreground truncate">{upload.filename}</h2>
+                  <h2 className="text-lg font-semibold tracking-tight text-foreground truncate">
+                    {upload.filename}
+                  </h2>
                   <StatusBadge status={upload.status} />
                 </div>
                 <div className="mt-1 flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
@@ -464,10 +506,14 @@ export default function Processing() {
 
         <Card>
           <CardContent className="p-5 space-y-2">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Calculated total</div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Calculated total
+            </div>
             <div className="text-2xl font-semibold tracking-tight text-foreground">
               {totalFormatted.amount}{" "}
-              <span className="text-sm font-normal text-muted-foreground">{totalFormatted.unit}</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                {totalFormatted.unit}
+              </span>
             </div>
             <div className="flex items-center justify-between text-xs pt-2 border-t">
               <div className="flex items-center gap-1.5">
@@ -499,10 +545,10 @@ export default function Processing() {
                       ? "This upload has been approved and posted to the emissions ledger."
                       : "Processing and emission factor calculation are complete. Review the extracted lines below before approving."
                     : pipelineCompleted && items.length === 0
-                    ? "Pipeline finished but no activity lines were found in this document. Try a CSV export, or check that the PDF contains readable text (scanned images need manual review)."
-                    : items.length === 0
-                      ? "No activity lines could be extracted from this document. Scanned PDFs and image-only files need manual review."
-                      : `Vayura extracted ${items.length} line items from this document. ${lowCount} items have low confidence and need your review before they can be approved. You can edit any quantity, vendor, or emission factor below.`}
+                      ? "Pipeline finished but no activity lines were found in this document. Try a CSV export, or check that the PDF contains readable text (scanned images need manual review)."
+                      : items.length === 0
+                        ? "No activity lines could be extracted from this document. Scanned PDFs and image-only files need manual review."
+                        : `Vayura extracted ${items.length} line items from this document. ${lowCount} items have low confidence and need your review before they can be approved. You can edit any quantity, vendor, or emission factor below.`}
               </p>
             </div>
             <PipelineProgress
@@ -517,7 +563,9 @@ export default function Processing() {
       <Card>
         <CardHeader>
           <CardTitle>Extracted line items</CardTitle>
-          <CardDescription>Review, edit, and approve each row before posting to your emissions ledger.</CardDescription>
+          <CardDescription>
+            Review, edit, and approve each row before posting to your emissions ledger.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {items.some((item) => item.dateAssumed) && (
@@ -525,6 +573,7 @@ export default function Processing() {
               Some lines have no date on the bill. We used today’s date so they can go into the report. Change the date if the bill is for another day, then approve.
             </div>
           )}
+
           <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
@@ -548,117 +597,125 @@ export default function Processing() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                pageItems.map((item) => {
-                  const co2 = lineKgCo2e(item, factorsById);
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <div className="text-sm font-medium text-foreground">{item.description}</div>
-                        <div className="text-xs text-muted-foreground">{item.category}</div>
-                      </TableCell>
-                      <TableCell className="text-sm">{item.vendor}</TableCell>
-                      <TableCell>
-                        <Select
-                          value={item.facility || ORGANISATION_WIDE_FACILITY}
-                          disabled={!canReview}
-                          onValueChange={(v) => {
-                            if (v === ADD_FACILITY_VALUE) {
-                              if (!orgId) return;
-                              setFacilityTargetLineId(item.id);
-                              setAddFacilityOpen(true);
-                              return;
+                  pageItems.map((item) => {
+                    const co2 = lineKgCo2e(item, factorsById);
+
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className="text-sm font-medium text-foreground">{item.description}</div>
+                          <div className="text-xs text-muted-foreground">{item.category}</div>
+                        </TableCell>
+                        <TableCell className="text-sm">{item.vendor}</TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.facility || ORGANISATION_WIDE_FACILITY}
+                            disabled={!canEditReview}
+                            onValueChange={(v) => {
+                              if (v === ADD_FACILITY_VALUE) {
+                                if (!orgId || !canManageFacilities) return;
+                                setFacilityTargetLineId(item.id);
+                                setAddFacilityOpen(true);
+                                return;
+                              }
+
+                              updateItem(item.id, { facility: v });
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-40">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={4} className="max-h-72 z-[200]">
+                              {facilityOptions.map((name) => (
+                                <SelectItem key={name} value={name} className="text-xs">
+                                  {name === ORGANISATION_WIDE_FACILITY
+                                    ? "Organisation-wide (shared / SaaS)"
+                                    : name}
+                                </SelectItem>
+                              ))}
+                              {orgId && canEditReview && canManageFacilities && (
+                                <SelectItem value={ADD_FACILITY_VALUE} className="text-xs">
+                                  + Add operations site…
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="date"
+                            value={/^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ""}
+                            disabled={!canEditReview}
+                            className="h-8 w-36"
+                            onChange={(e) =>
+                              updateItem(item.id, { date: e.target.value, dateAssumed: false })
                             }
-                            updateItem(item.id, { facility: v });
-                          }}
-                        >
-                          <SelectTrigger className="h-8 w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent position="popper" sideOffset={4} className="max-h-72 z-[200]">
-                            {facilityOptions.map((name) => (
-                              <SelectItem key={name} value={name} className="text-xs">
-                                {name === ORGANISATION_WIDE_FACILITY
-                                  ? "Organisation-wide (shared / SaaS)"
-                                  : name}
-                              </SelectItem>
-                            ))}
-                            {orgId && canReview && (
-                              <SelectItem value={ADD_FACILITY_VALUE} className="text-xs">
-                                + Add operations site…
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="date"
-                          value={/^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ""}
-                          disabled={!canReview}
-                          className="h-8 w-36"
-                          onChange={(e) =>
-                            updateItem(item.id, { date: e.target.value, dateAssumed: false })
-                          }
-                        />
-                        {item.dateAssumed && (
-                          <p className="mt-1 max-w-36 text-xs text-amber-800">
-                            No date on the bill. Using today.
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          disabled={!canReview}
-                          onChange={(e) => {
-                            const quantity = parseFloat(e.target.value) || 0;
-                            const draft = { ...item, quantity };
-                            updateItem(item.id, {
-                              quantity,
-                              kgCO2e: lineKgCo2e(draft as ReviewLineItem, factorsById),
-                            });
-                          }}
-                          className="h-8 w-24 text-right tabular-nums ml-auto"
-                        />
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{item.unit}</TableCell>
-                      <TableCell>
-                        <EmissionFactorSelect
-                          factors={factorOptions}
-                          line={{
-                            description: item.description,
-                            category: item.category,
-                            unit: item.unit,
-                          }}
-                          value={item.factorId}
-                          selectedName={item.factorName}
-                          disabled={!canReview}
-                          onValueChange={(v, next) => {
-                            const patch: Partial<ReviewLineItem> = {
-                              factorId: v,
-                              factorName: next?.name,
-                              factorValue: next?.value,
-                              factorUnit: next?.unit,
-                            };
-                            const draft = { ...item, ...patch };
-                            patch.kgCO2e = lineKgCo2e(
-                              draft as ReviewLineItem,
-                              factorsById,
-                            );
-                            updateItem(item.id, patch);
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-medium tabular-nums">
-                        {co2.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
-                      </TableCell>
-                      <TableCell>
-                        <ConfidenceDot level={item.confidence} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                          />
+                          {item.dateAssumed && (
+                            <p className="mt-1 max-w-36 text-xs text-amber-800">
+                              No date on the bill. Using today.
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            disabled={!canEditReview}
+                            onChange={(e) => {
+                              const quantity = parseFloat(e.target.value) || 0;
+                              const draft = { ...item, quantity };
+
+                              updateItem(item.id, {
+                                quantity,
+                                kgCO2e: lineKgCo2e(draft as ReviewLineItem, factorsById),
+                              });
+                            }}
+                            className="h-8 w-24 text-right tabular-nums ml-auto"
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {item.unit}
+                        </TableCell>
+                        <TableCell>
+                          <EmissionFactorSelect
+                            factors={factorOptions}
+                            line={{
+                              description: item.description,
+                              category: item.category,
+                              unit: item.unit,
+                            }}
+                            value={item.factorId}
+                            selectedName={item.factorName}
+                            disabled={!canEditReview}
+                            onValueChange={(v, next) => {
+                              const patch: Partial<ReviewLineItem> = {
+                                factorId: v,
+                                factorName: next?.name,
+                                factorValue: next?.value,
+                                factorUnit: next?.unit,
+                              };
+
+                              const draft = { ...item, ...patch };
+
+                              patch.kgCO2e = lineKgCo2e(
+                                draft as ReviewLineItem,
+                                factorsById,
+                              );
+
+                              updateItem(item.id, patch);
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right text-sm font-medium tabular-nums">
+                          {co2.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
+                        </TableCell>
+                        <TableCell>
+                          <ConfidenceDot level={item.confidence} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -669,11 +726,25 @@ export default function Processing() {
               Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, items.length)} of {items.length} items
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <span className="text-xs tabular-nums">Page {page} of {totalPages}</span>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+              <span className="text-xs tabular-nums">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
@@ -700,28 +771,46 @@ export default function Processing() {
             </span>
           )}
         </div>
+
         <div className="flex items-center gap-2">
-          {canReview && (
+          {canEditReview && (
+            <Button
+              variant="outline"
+              disabled={
+                saveReviewMutation.isPending ||
+                approveMutation.isPending ||
+                rejectMutation.isPending
+              }
+              onClick={() => saveReviewMutation.mutate()}
+            >
+              <Save className="w-4 h-4 mr-2" />
+              {saveReviewMutation.isPending ? "Saving…" : "Save review"}
+            </Button>
+          )}
+
+          {canApprove && (
             <>
               <Button
                 variant="outline"
-                disabled={saveReviewMutation.isPending || approveMutation.isPending || rejectMutation.isPending}
-                onClick={() => saveReviewMutation.mutate()}
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {saveReviewMutation.isPending ? "Saving…" : dirty ? "Save review" : "Save review"}
-              </Button>
-              <Button
-                variant="outline"
                 className="text-destructive hover:text-destructive"
-                disabled={approveMutation.isPending || saveReviewMutation.isPending || rejectMutation.isPending}
+                disabled={
+                  approveMutation.isPending ||
+                  saveReviewMutation.isPending ||
+                  rejectMutation.isPending
+                }
                 onClick={() => setRejectOpen(true)}
               >
                 <XCircle className="w-4 h-4 mr-2" />
                 Reject
               </Button>
+
               <Button
-                disabled={approveMutation.isPending || saveReviewMutation.isPending || rejectMutation.isPending || items.some((i) => !i.factorId)}
+                disabled={
+                  approveMutation.isPending ||
+                  saveReviewMutation.isPending ||
+                  rejectMutation.isPending ||
+                  items.some((i) => !i.factorId)
+                }
                 onClick={() => approveMutation.mutate()}
               >
                 <Send className="w-4 h-4 mr-2" />
@@ -729,6 +818,7 @@ export default function Processing() {
               </Button>
             </>
           )}
+
           {isApproved && (
             <Button onClick={() => setLocation("/emissions")}>
               View emissions
@@ -745,19 +835,25 @@ export default function Processing() {
               The document will stay on record as failed and will not post to the emissions ledger.
             </DialogDescription>
           </DialogHeader>
+
           <textarea
             className="min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             placeholder="Reason for rejection"
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
           />
+
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRejectOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="destructive"
-              disabled={rejectMutation.isPending || rejectReason.trim().length < 3}
+              disabled={
+                !canApprove ||
+                rejectMutation.isPending ||
+                rejectReason.trim().length < 3
+              }
               onClick={() => rejectMutation.mutate()}
             >
               {rejectMutation.isPending ? "Rejecting…" : "Confirm reject"}
@@ -766,7 +862,7 @@ export default function Processing() {
         </DialogContent>
       </Dialog>
 
-      {orgId && (
+      {orgId && canManageFacilities && (
         <AddFacilityDialog
           orgId={orgId}
           open={addFacilityOpen}
@@ -797,18 +893,30 @@ export default function Processing() {
         <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Original file</DialogTitle>
-            <DialogDescription>{previewName || upload?.filename}</DialogDescription>
+            <DialogDescription>{previewName || upload.filename}</DialogDescription>
           </DialogHeader>
+
           <div className="flex-1 min-h-0 rounded-md border bg-muted/20 overflow-hidden">
             {previewUrl && previewIsImage && (
-              <img src={previewUrl} alt={previewName} className="max-h-full max-w-full mx-auto object-contain" />
+              <img
+                src={previewUrl}
+                alt={previewName}
+                className="max-h-full max-w-full mx-auto object-contain"
+              />
             )}
+
             {previewUrl && previewIsPdf && (
-              <iframe title={previewName} src={previewUrl} className="w-full h-full border-0" />
+              <iframe
+                title={previewName}
+                src={previewUrl}
+                className="w-full h-full border-0"
+              />
             )}
+
             {previewBlob && previewIsSpreadsheet && (
               <SpreadsheetPreview blob={previewBlob} filename={previewName} />
             )}
+
             {previewUrl && !previewIsImage && !previewIsPdf && !previewIsSpreadsheet && (
               <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
                 <FileSpreadsheet className="w-10 h-10 text-muted-foreground" />

@@ -77,7 +77,7 @@ export default function Billing() {
     return list.filter((p) => (sme ? p.audience === "company" : p.audience === "consultant"));
   }, [catalog.data?.plans, tenant, user?.userType]);
 
-  const alreadyPaid = tenant && !needsBilling({
+  const alreadyPaid = !import.meta.env.DEV && tenant && !needsBilling({
     user: {
       id: user?.id ?? "",
       email: user?.email ?? "",
@@ -92,6 +92,8 @@ export default function Billing() {
       tenantRole: tenant.role,
       orgRole: null,
       orgId: null,
+      verifierOrgId: null,
+      verifierName: null,
       allowedOrgIds: [],
       permissions: {
         readOnly: false,

@@ -1,4 +1,11 @@
-import type { AccessKind, AccessPermissions, OrgRole, TenantRole, UserType } from './common.js';
+import type {
+  AccessKind,
+  AccessPermissions,
+  OrgRole,
+  PermissionCode,
+  TenantRole,
+  UserType,
+} from './common.js';
 import type { OrganisationDto, OrgMembershipDto, TenantDto } from './tenancy.js';
 
 export type PublicUser = {
@@ -24,6 +31,7 @@ export type AccessProfile = {
   verifierName: string | null;
   allowedOrgIds: string[];
   permissions: AccessPermissions;
+  permissionCodes?: PermissionCode[];
   canEnableClientPortal: boolean;
 };
 

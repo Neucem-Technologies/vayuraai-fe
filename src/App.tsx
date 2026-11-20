@@ -1,23 +1,40 @@
+
 import { useEffect, type ComponentType } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import {
+  Switch,
+  Route,
+  Router as WouterRouter,
+  Redirect,
+} from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
+
 import { queryClient } from "@/lib/query-client";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useAuthStore, useIsClientViewer, isSmeWorkspace } from "@/hooks/use-auth";
+
+import {
+  useAuthStore,
+  useIsClientViewer,
+  isSmeWorkspace,
+} from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
+
 import { AppLayout } from "@/components/layout";
 import { ClientLayout } from "@/components/client-layout";
+import { VerifierLayout } from "@/components/verifier-layout";
+
 import { isUnpaidSubscriptionStatus } from "@vayura/api-contracts/billing";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
+import VerifyEmail from "@/pages/verify-email";
 import ForgotPassword from "@/pages/forgot-password";
 import ResetPassword from "@/pages/reset-password";
 import AcceptClientInvite from "@/pages/accept-client-invite";
 import AcceptTeamInvite from "@/pages/accept-team-invite";
+import AcceptVerifierInvite from "@/pages/accept-verifier-invite";
 
 import OnboardingOrganization from "@/pages/onboarding/organization";
 import OnboardingIndustry from "@/pages/onboarding/industry";
@@ -37,19 +54,22 @@ import SettingsOrganization from "@/pages/settings/organization";
 import SettingsUsers from "@/pages/settings/users";
 import SettingsFirm from "@/pages/settings/firm";
 import SettingsControls from "@/pages/settings/controls";
+
 import Policies from "@/pages/policies";
 import Verifiers from "@/pages/verifiers";
 import VerifierInbox from "@/pages/verifier-inbox";
-import AcceptVerifierInvite from "@/pages/accept-verifier-invite";
 import Clients from "@/pages/clients";
-import { VerifierLayout } from "@/components/verifier-layout";
 
 import ClientDashboard from "@/pages/client/dashboard";
 import ClientReports from "@/pages/client/reports";
 
 /** SPA mirror of API requirePaidSubscription — unpaid workspaces stay on /billing. */
 function billingBlocked(): boolean {
-  return isUnpaidSubscriptionStatus(useAuthStore.getState().tenant?.subscriptionStatus);
+  if (import.meta.env.DEV) return false;
+
+  return isUnpaidSubscriptionStatus(
+    useAuthStore.getState().tenant?.subscriptionStatus,
+  );
 }
 
 function ProtectedRoute({
@@ -65,14 +85,23 @@ function ProtectedRoute({
   consultantOnly?: boolean;
   requireBilling?: boolean;
 }) {
-  const { isAuthenticated, onboardingComplete, access, authHydrated } = useAuthStore();
-  const activeClientId = useActiveClientStore((s) => s.activeClientId);
+  const {
+    isAuthenticated,
+    onboardingComplete,
+    access,
+    authHydrated,
+  } = useAuthStore();
+
+  const activeClientId = useActiveClientStore(
+    (state) => state.activeClientId,
+  );
+
   const isClientViewer = access?.kind === "client_viewer";
 
   if (!authHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        Loading...
       </div>
     );
   }
@@ -118,21 +147,39 @@ function ProtectedRoute({
 
 function operatorHomePath(): "/dashboard" | "/clients" {
   const { tenant, user } = useAuthStore.getState();
-  return isSmeWorkspace(user?.userType, tenant) ? "/dashboard" : "/clients";
+
+  return isSmeWorkspace(user?.userType, tenant)
+    ? "/dashboard"
+    : "/clients";
 }
 
-function ClientProtectedRoute({ component: Component }: { component: ComponentType }) {
+function ClientProtectedRoute({
+  component: Component,
+}: {
+  component: ComponentType;
+}) {
   const { isAuthenticated, access, authHydrated } = useAuthStore();
+
   if (!authHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        Loading...
       </div>
     );
   }
-  if (!isAuthenticated) return <Redirect to="/login" />;
-  if (access?.kind === "verifier") return <Redirect to="/verifier" />;
-  if (access?.kind !== "client_viewer") return <Redirect to={operatorHomePath()} />;
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  if (access?.kind === "verifier") {
+    return <Redirect to="/verifier" />;
+  }
+
+  if (access?.kind !== "client_viewer") {
+    return <Redirect to={operatorHomePath()} />;
+  }
+
   return (
     <ClientLayout>
       <Component />
@@ -140,17 +187,29 @@ function ClientProtectedRoute({ component: Component }: { component: ComponentTy
   );
 }
 
-function VerifierProtectedRoute({ component: Component }: { component: ComponentType }) {
+function VerifierProtectedRoute({
+  component: Component,
+}: {
+  component: ComponentType;
+}) {
   const { isAuthenticated, access, authHydrated } = useAuthStore();
+
   if (!authHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        Loading...
       </div>
     );
   }
-  if (!isAuthenticated) return <Redirect to="/login" />;
-  if (access?.kind !== "verifier") return <Redirect to={operatorHomePath()} />;
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  if (access?.kind !== "verifier") {
+    return <Redirect to={operatorHomePath()} />;
+  }
+
   return (
     <VerifierLayout>
       <Component />
@@ -158,30 +217,54 @@ function VerifierProtectedRoute({ component: Component }: { component: Component
   );
 }
 
-function OnboardingRoute({ component: Component }: { component: ComponentType }) {
+function OnboardingRoute({
+  component: Component,
+}: {
+  component: ComponentType;
+}) {
   const { isAuthenticated, access, authHydrated } = useAuthStore();
+
   if (!authHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        Loading...
       </div>
     );
   }
-  if (!isAuthenticated) return <Redirect to="/login" />;
-  if (access?.kind === "verifier") return <Redirect to="/verifier" />;
-  if (access?.kind === "client_viewer") return <Redirect to="/client/dashboard" />;
-  if (billingBlocked()) return <Redirect to="/billing" />;
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  if (access?.kind === "verifier") {
+    return <Redirect to="/verifier" />;
+  }
+
+  if (access?.kind === "client_viewer") {
+    return <Redirect to="/client/dashboard" />;
+  }
+
+  if (billingBlocked()) {
+    return <Redirect to="/billing" />;
+  }
+
   return <Component />;
 }
 
 function Router() {
-  const { isAuthenticated, onboardingComplete, authHydrated, access } = useAuthStore();
+  const {
+    isAuthenticated,
+    onboardingComplete,
+    authHydrated,
+    access,
+  } = useAuthStore();
+
   const isClientViewer = useIsClientViewer();
 
   if (!authHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
-        Loading…
+        Loading...
       </div>
     );
   }
@@ -189,53 +272,193 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        {isAuthenticated
-          ? access?.kind === "verifier"
-            ? <Redirect to="/verifier" />
-            : isClientViewer
-            ? <Redirect to="/client/dashboard" />
-            : billingBlocked()
-              ? <Redirect to="/billing" />
-            : onboardingComplete
-              ? <Redirect to={operatorHomePath()} />
-              : <Redirect to="/onboarding/organization" />
-          : <Redirect to="/signup" />}
+        {isAuthenticated ? (
+          access?.kind === "verifier" ? (
+            <Redirect to="/verifier" />
+          ) : isClientViewer ? (
+            <Redirect to="/client/dashboard" />
+          ) : billingBlocked() ? (
+            <Redirect to="/billing" />
+          ) : onboardingComplete ? (
+            <Redirect to={operatorHomePath()} />
+          ) : (
+            <Redirect to="/onboarding/organization" />
+          )
+        ) : (
+          <Redirect to="/signup" />
+        )}
       </Route>
 
+      {/* Public authentication routes */}
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
       <Route path="/register" component={Signup} />
+      <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+
+      {/* Invitation routes */}
       <Route path="/accept-client-invite" component={AcceptClientInvite} />
       <Route path="/accept-team-invite" component={AcceptTeamInvite} />
       <Route path="/accept-verifier-invite" component={AcceptVerifierInvite} />
 
       <Route path="/billing" component={Billing} />
 
-      <Route path="/onboarding/organization" component={() => <OnboardingRoute component={OnboardingOrganization} />} />
-      <Route path="/onboarding/industry" component={() => <OnboardingRoute component={OnboardingIndustry} />} />
-      <Route path="/onboarding/data-sources" component={() => <OnboardingRoute component={OnboardingDataSources} />} />
+      {/* Onboarding routes */}
+      <Route
+        path="/onboarding/organization"
+        component={() => (
+          <OnboardingRoute component={OnboardingOrganization} />
+        )}
+      />
 
-      <Route path="/client/dashboard" component={() => <ClientProtectedRoute component={ClientDashboard} />} />
-      <Route path="/client/reports" component={() => <ClientProtectedRoute component={ClientReports} />} />
+      <Route
+        path="/onboarding/industry"
+        component={() => (
+          <OnboardingRoute component={OnboardingIndustry} />
+        )}
+      />
 
-      <Route path="/clients" component={() => <ProtectedRoute component={Clients} consultantOnly />} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} requireActiveClient />} />
-      <Route path="/uploads" component={() => <ProtectedRoute component={Uploads} requireActiveClient />} />
-      <Route path="/uploads/processing/:id" component={() => <ProtectedRoute component={Processing} requireActiveClient />} />
-      <Route path="/emissions" component={() => <ProtectedRoute component={Emissions} requireActiveClient />} />
-      <Route path="/reports" component={() => <ProtectedRoute component={Reports} requireActiveClient />} />
-      <Route path="/offsets" component={() => <ProtectedRoute component={Offsets} requireActiveClient />} />
-      <Route path="/find-consultants" component={() => <ProtectedRoute component={FindConsultants} />} />
-      <Route path="/settings/organization" component={() => <ProtectedRoute component={SettingsOrganization} requireActiveClient />} />
-      <Route path="/settings/users" component={() => <ProtectedRoute component={SettingsUsers} />} />
-      <Route path="/settings/controls" component={() => <ProtectedRoute component={SettingsControls} requireActiveClient />} />
-      <Route path="/policies" component={() => <ProtectedRoute component={Policies} consultantOnly />} />
-      <Route path="/verifiers" component={() => <ProtectedRoute component={Verifiers} />} />
-      <Route path="/verifier" component={() => <VerifierProtectedRoute component={VerifierInbox} />} />
-      <Route path="/settings/factors" component={() => <ProtectedRoute component={SettingsFactors} consultantOnly />} />
-      <Route path="/settings/firm" component={() => <ProtectedRoute component={SettingsFirm} consultantOnly />} />
+      <Route
+        path="/onboarding/data-sources"
+        component={() => (
+          <OnboardingRoute component={OnboardingDataSources} />
+        )}
+      />
+
+      {/* Client portal routes */}
+      <Route
+        path="/client/dashboard"
+        component={() => (
+          <ClientProtectedRoute component={ClientDashboard} />
+        )}
+      />
+
+      <Route
+        path="/client/reports"
+        component={() => (
+          <ClientProtectedRoute component={ClientReports} />
+        )}
+      />
+
+      {/* Main application routes */}
+      <Route
+        path="/clients"
+        component={() => (
+          <ProtectedRoute component={Clients} consultantOnly />
+        )}
+      />
+
+      <Route
+        path="/dashboard"
+        component={() => (
+          <ProtectedRoute component={Dashboard} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/uploads"
+        component={() => (
+          <ProtectedRoute component={Uploads} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/uploads/processing/:id"
+        component={() => (
+          <ProtectedRoute component={Processing} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/emissions"
+        component={() => (
+          <ProtectedRoute component={Emissions} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/reports"
+        component={() => (
+          <ProtectedRoute component={Reports} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/offsets"
+        component={() => (
+          <ProtectedRoute component={Offsets} requireActiveClient />
+        )}
+      />
+
+      <Route
+        path="/find-consultants"
+        component={() => (
+          <ProtectedRoute component={FindConsultants} />
+        )}
+      />
+
+      <Route
+        path="/settings/organization"
+        component={() => (
+          <ProtectedRoute
+            component={SettingsOrganization}
+            requireActiveClient
+          />
+        )}
+      />
+
+      <Route
+        path="/settings/users"
+        component={() => (
+          <ProtectedRoute component={SettingsUsers} />
+        )}
+      />
+
+      <Route
+        path="/settings/controls"
+        component={() => (
+          <ProtectedRoute
+            component={SettingsControls}
+            requireActiveClient
+          />
+        )}
+      />
+
+      <Route
+        path="/policies"
+        component={() => (
+          <ProtectedRoute component={Policies} consultantOnly />
+        )}
+      />
+
+      <Route
+        path="/verifiers"
+        component={() => (
+          <ProtectedRoute component={Verifiers} />
+        )}
+      />
+
+      <Route
+        path="/verifier"
+        component={() => (
+          <VerifierProtectedRoute component={VerifierInbox} />
+        )}
+      />
+
+      <Route
+        path="/settings/factors"
+        component={() => (
+          <ProtectedRoute component={SettingsFactors} consultantOnly />
+        )}
+      />
+
+      <Route
+        path="/settings/firm"
+        component={() => (
+          <ProtectedRoute component={SettingsFirm} consultantOnly />
+        )}
+      />
 
       <Route component={NotFound} />
     </Switch>
@@ -250,11 +473,18 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "")}>
+        <WouterRouter
+          base={(import.meta.env.BASE_URL ?? "/").replace(/\/$/, "")}
+        >
           <Router />
         </WouterRouter>
+
         <Toaster />
-        <SonnerToaster position="top-center" richColors closeButton />
+        <SonnerToaster
+          position="top-center"
+          richColors
+          closeButton
+        />
       </TooltipProvider>
     </QueryClientProvider>
   );

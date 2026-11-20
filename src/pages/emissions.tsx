@@ -1,3 +1,4 @@
+
 import { useMemo, useState } from "react";
 import {
   Search,
@@ -37,26 +38,34 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEmissions, useFacilities } from "@/hooks/use-data";
+import { useCan } from "@/hooks/use-auth";
 import { formatEmissionMass } from "@/lib/format-emissions";
 import type { EmissionRecord } from "@/lib/mock-data";
 
 export default function Emissions() {
-  const { data: emissions, isLoading } = useEmissions();
+  const canReadEmissions = useCan("emissions.read");
+  const canDownloadReport = useCan("report.download");
+
+  const { data: emissions, isLoading } = useEmissions(canReadEmissions);
   const { data: orgFacilities = [] } = useFacilities();
+
   const [search, setSearch] = useState("");
   const [scope, setScope] = useState("all");
   const [facility, setFacility] = useState("all");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<EmissionRecord | null>(null);
+
   const PAGE_SIZE = 12;
 
   const facilities = useMemo(
     () =>
       Array.from(
-        new Set([
-          ...orgFacilities.map((f) => f.name),
-          ...(emissions ?? []).map((e) => e.facility),
-        ].filter((f) => f && f !== "—")),
+        new Set(
+          [
+            ...orgFacilities.map((f) => f.name),
+            ...(emissions ?? []).map((e) => e.facility),
+          ].filter((f) => f && f !== "—"),
+        ),
       ),
     [emissions, orgFacilities],
   );
@@ -65,22 +74,45 @@ export default function Emissions() {
     .filter((e) => {
       if (scope !== "all" && e.scope !== scope) return false;
       if (facility !== "all" && e.facility !== facility) return false;
-      if (search && !e.activity.toLowerCase().includes(search.toLowerCase()) && !e.factorName.toLowerCase().includes(search.toLowerCase())) return false;
+
+      if (
+        search &&
+        !e.activity.toLowerCase().includes(search.toLowerCase()) &&
+        !e.factorName.toLowerCase().includes(search.toLowerCase())
+      ) {
+        return false;
+      }
+
       return true;
     })
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .sort(
+      (a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const pageRows = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  );
 
   const totals = {
     total: filtered.reduce((acc, e) => acc + e.kgCO2e, 0),
-    scope1: filtered.filter((e) => e.scope === "Scope 1").reduce((acc, e) => acc + e.kgCO2e, 0),
-    scope2: filtered.filter((e) => e.scope === "Scope 2").reduce((acc, e) => acc + e.kgCO2e, 0),
-    scope3: filtered.filter((e) => e.scope === "Scope 3").reduce((acc, e) => acc + e.kgCO2e, 0),
+    scope1: filtered
+      .filter((e) => e.scope === "Scope 1")
+      .reduce((acc, e) => acc + e.kgCO2e, 0),
+    scope2: filtered
+      .filter((e) => e.scope === "Scope 2")
+      .reduce((acc, e) => acc + e.kgCO2e, 0),
+    scope3: filtered
+      .filter((e) => e.scope === "Scope 3")
+      .reduce((acc, e) => acc + e.kgCO2e, 0),
   };
 
   const exportCsv = () => {
+    if (!canReadEmissions || !canDownloadReport) return;
+
     const header = [
       "date",
       "activity",
@@ -93,6 +125,7 @@ export default function Emissions() {
       "kgCO2e",
       "source",
     ];
+
     const rows = filtered.map((e) =>
       [
         e.date,
@@ -109,16 +142,37 @@ export default function Emissions() {
         .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
         .join(","),
     );
+
     const blob = new Blob([[header.join(","), ...rows].join("\n")], {
       type: "text/csv;charset=utf-8",
     });
+
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
+
     anchor.href = url;
     anchor.download = "emissions-ledger.csv";
     anchor.click();
+
     URL.revokeObjectURL(url);
   };
+
+  if (!canReadEmissions) {
+    return (
+      <>
+        <PageHeader
+          title="Emissions ledger"
+          subtitle="You do not have permission to view emissions records."
+        />
+
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            You need the emissions.read permission to access this page.
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -126,33 +180,64 @@ export default function Emissions() {
         title="Emissions ledger"
         subtitle="Every approved activity record with its applied emission factor and traceable source document."
         actions={
-          <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
-            <Download className="w-4 h-4 mr-2" />
-            Export CSV
-          </Button>
+          canDownloadReport ? (
+            <Button
+              variant="outline"
+              onClick={exportCsv}
+              disabled={filtered.length === 0}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+          ) : null
         }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Total emissions", val: totals.total, color: "text-foreground" },
-          { label: "Scope 1", val: totals.scope1, color: "text-foreground" },
-          { label: "Scope 2", val: totals.scope2, color: "text-foreground" },
-          { label: "Scope 3", val: totals.scope3, color: "text-foreground" },
+          {
+            label: "Total emissions",
+            val: totals.total,
+            color: "text-foreground",
+          },
+          {
+            label: "Scope 1",
+            val: totals.scope1,
+            color: "text-foreground",
+          },
+          {
+            label: "Scope 2",
+            val: totals.scope2,
+            color: "text-foreground",
+          },
+          {
+            label: "Scope 3",
+            val: totals.scope3,
+            color: "text-foreground",
+          },
         ].map((m) => {
           const formatted = formatEmissionMass(m.val);
+
           return (
-          <Card key={m.label}>
-            <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">{m.label}</div>
-              <div className="mt-1 flex items-baseline gap-1">
-                <span className={`text-xl font-semibold tracking-tight ${m.color}`}>
-                  {formatted.amount}
-                </span>
-                <span className="text-xs text-muted-foreground">{formatted.unit}</span>
-              </div>
-            </CardContent>
-          </Card>
+            <Card key={m.label}>
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground">
+                  {m.label}
+                </div>
+
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span
+                    className={`text-xl font-semibold tracking-tight ${m.color}`}
+                  >
+                    {formatted.amount}
+                  </span>
+
+                  <span className="text-xs text-muted-foreground">
+                    {formatted.unit}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
           );
         })}
       </div>
@@ -161,26 +246,38 @@ export default function Emissions() {
         <CardContent className="p-4">
           <div className="flex flex-col xl:flex-row xl:items-center gap-3 mb-4">
             <div className="text-sm text-muted-foreground">
-              Posted ledger records only — approve documents on Uploads to add rows here.
+              Posted ledger records only — approve documents on Uploads to add
+              rows here.
             </div>
 
             <div className="flex-1" />
 
             <div className="relative w-full xl:w-64">
               <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+
               <Input
                 placeholder="Search activity or factor..."
                 className="pl-8"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
               />
             </div>
 
-            <Select value={scope} onValueChange={setScope}>
+            <Select
+              value={scope}
+              onValueChange={(value) => {
+                setScope(value);
+                setPage(1);
+              }}
+            >
               <SelectTrigger className="w-full xl:w-36">
                 <Filter className="w-4 h-4 mr-1 text-muted-foreground" />
                 <SelectValue placeholder="Scope" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="all">All scopes</SelectItem>
                 <SelectItem value="Scope 1">Scope 1</SelectItem>
@@ -189,14 +286,24 @@ export default function Emissions() {
               </SelectContent>
             </Select>
 
-            <Select value={facility} onValueChange={setFacility}>
+            <Select
+              value={facility}
+              onValueChange={(value) => {
+                setFacility(value);
+                setPage(1);
+              }}
+            >
               <SelectTrigger className="w-full xl:w-48">
                 <SelectValue placeholder="Facility" />
               </SelectTrigger>
+
               <SelectContent>
                 <SelectItem value="all">All facilities</SelectItem>
+
                 {facilities.map((f) => (
-                  <SelectItem key={f} value={f}>{f}</SelectItem>
+                  <SelectItem key={f} value={f}>
+                    {f}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -217,56 +324,136 @@ export default function Emissions() {
                   <TableHead className="w-[60px]" />
                 </TableRow>
               </TableHeader>
+
               <TableBody>
-                {isLoading && Array.from({ length: 8 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={9}><Skeleton className="h-6 w-full" /></TableCell>
-                  </TableRow>
-                ))}
+                {isLoading &&
+                  Array.from({ length: 8 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={9}>
+                        <Skeleton className="h-6 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+
                 {!isLoading && pageRows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-12 text-sm text-muted-foreground">
+                    <TableCell
+                      colSpan={9}
+                      className="text-center py-12 text-sm text-muted-foreground"
+                    >
                       No matching emission records.
                     </TableCell>
                   </TableRow>
                 )}
-                {!isLoading && pageRows.map((e) => (
-                  <TableRow key={e.id} className="cursor-pointer" onClick={() => setSelected(e)}>
-                    <TableCell className="text-sm text-muted-foreground tabular-nums">{e.date}</TableCell>
-                    <TableCell>
-                      <div className="text-sm font-medium text-foreground">{e.activity}</div>
-                      <div className="text-xs text-muted-foreground truncate max-w-[300px]">{e.factorName}</div>
-                    </TableCell>
-                    <TableCell className="text-sm">{e.facility}</TableCell>
-                    <TableCell><span className="text-xs px-2 py-0.5 rounded bg-muted text-foreground font-medium">{e.scope}</span></TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {e.quantity.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
-                      <span className="text-muted-foreground ml-1">{e.unit}</span>
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{e.emissionFactor}</TableCell>
-                    <TableCell className="text-right text-sm font-medium tabular-nums">{e.kgCO2e.toLocaleString("en-IN", { maximumFractionDigits: 1 })}</TableCell>
-                    <TableCell><StatusBadge status={e.status} /></TableCell>
-                    <TableCell onClick={(ev) => ev.stopPropagation()}>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelected(e)}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+
+                {!isLoading &&
+                  pageRows.map((e) => (
+                    <TableRow
+                      key={e.id}
+                      className="cursor-pointer"
+                      onClick={() => setSelected(e)}
+                    >
+                      <TableCell className="text-sm text-muted-foreground tabular-nums">
+                        {e.date}
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="text-sm font-medium text-foreground">
+                          {e.activity}
+                        </div>
+
+                        <div className="text-xs text-muted-foreground truncate max-w-[300px]">
+                          {e.factorName}
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-sm">
+                        {e.facility}
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="text-xs px-2 py-0.5 rounded bg-muted text-foreground font-medium">
+                          {e.scope}
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {e.quantity.toLocaleString("en-IN", {
+                          maximumFractionDigits: 1,
+                        })}
+                        <span className="text-muted-foreground ml-1">
+                          {e.unit}
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                        {e.emissionFactor}
+                      </TableCell>
+
+                      <TableCell className="text-right text-sm font-medium tabular-nums">
+                        {e.kgCO2e.toLocaleString("en-IN", {
+                          maximumFractionDigits: 1,
+                        })}
+                      </TableCell>
+
+                      <TableCell>
+                        <StatusBadge status={e.status} />
+                      </TableCell>
+
+                      <TableCell
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setSelected(e)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </div>
 
           <div className="flex items-center justify-between mt-4">
             <div className="text-xs text-muted-foreground">
-              Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} records
+              Showing{" "}
+              {filtered.length === 0
+                ? 0
+                : (page - 1) * PAGE_SIZE + 1}
+              –{Math.min(page * PAGE_SIZE, filtered.length)} of{" "}
+              {filtered.length} records
             </div>
+
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPage((p) => Math.max(1, p - 1))
+                }
+                disabled={page === 1}
+              >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <span className="text-xs tabular-nums">Page {page} of {totalPages}</span>
-              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+
+              <span className="text-xs tabular-nums">
+                Page {page} of {totalPages}
+              </span>
+
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={page === totalPages}
+              >
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
@@ -274,72 +461,146 @@ export default function Emissions() {
         </CardContent>
       </Card>
 
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+      <Sheet
+        open={!!selected}
+        onOpenChange={(open) => !open && setSelected(null)}
+      >
         <SheetContent className="w-full sm:max-w-md overflow-y-auto">
           {selected && (
             <>
               <SheetHeader>
                 <SheetTitle>Emission record</SheetTitle>
-                <SheetDescription>Full audit trail for record {selected.id}</SheetDescription>
+                <SheetDescription>
+                  Full audit trail for record {selected.id}
+                </SheetDescription>
               </SheetHeader>
+
               <div className="mt-6 space-y-5">
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Activity</div>
-                  <div className="text-sm font-medium text-foreground">{selected.activity}</div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                    Activity
+                  </div>
+
+                  <div className="text-sm font-medium text-foreground">
+                    {selected.activity}
+                  </div>
                 </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     ["Date", selected.date],
                     ["Facility", selected.facility],
                     ["Scope", selected.scope],
                     ["Category", selected.category],
-                    ["Quantity", `${selected.quantity} ${selected.unit}`],
+                    [
+                      "Quantity",
+                      `${selected.quantity} ${selected.unit}`,
+                    ],
                     ["Factor value", `${selected.emissionFactor}`],
                   ].map(([k, v]) => (
                     <div key={k}>
-                      <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">{k}</div>
-                      <div className="text-sm text-foreground">{v}</div>
+                      <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                        {k}
+                      </div>
+
+                      <div className="text-sm text-foreground">
+                        {v}
+                      </div>
                     </div>
                   ))}
                 </div>
+
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Emission factor used</div>
-                  <div className="text-sm text-foreground">{selected.factorName}</div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                    Emission factor used
+                  </div>
+
+                  <div className="text-sm text-foreground">
+                    {selected.factorName}
+                  </div>
+
                   <div className="mt-3 grid grid-cols-2 gap-4">
                     {[
-                      ["Source", selected.factorSourceName || "—"],
-                      ["Region", selected.factorRegion || "—"],
-                      ["Source year", selected.factorEffectiveYear ? String(selected.factorEffectiveYear) : "—"],
-                      ["Version", selected.factorSourceVersion || "—"],
+                      [
+                        "Source",
+                        selected.factorSourceName || "—",
+                      ],
+                      [
+                        "Region",
+                        selected.factorRegion || "—",
+                      ],
+                      [
+                        "Source year",
+                        selected.factorEffectiveYear
+                          ? String(selected.factorEffectiveYear)
+                          : "—",
+                      ],
+                      [
+                        "Version",
+                        selected.factorSourceVersion || "—",
+                      ],
                     ].map(([k, v]) => (
                       <div key={k}>
-                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">{k}</div>
-                        <div className="text-sm text-foreground break-all">{v}</div>
+                        <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                          {k}
+                        </div>
+
+                        <div className="text-sm text-foreground break-all">
+                          {v}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
+
                 <div className="rounded-md bg-primary/5 border border-primary/20 p-4">
-                  <div className="text-xs text-muted-foreground">Calculated emissions</div>
-                  <div className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-                    {selected.kgCO2e.toLocaleString("en-IN", { maximumFractionDigits: 1 })} <span className="text-sm font-normal text-muted-foreground">kgCO2e</span>
+                  <div className="text-xs text-muted-foreground">
+                    Calculated emissions
                   </div>
+
+                  <div className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+                    {selected.kgCO2e.toLocaleString("en-IN", {
+                      maximumFractionDigits: 1,
+                    })}{" "}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      kgCO2e
+                    </span>
+                  </div>
+
                   <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                    <TrendingUp className="w-3 h-3" /> {selected.quantity} × {selected.emissionFactor} = {selected.kgCO2e.toFixed(2)}
+                    <TrendingUp className="w-3 h-3" />
+                    {selected.quantity} × {selected.emissionFactor} ={" "}
+                    {selected.kgCO2e.toFixed(2)}
                   </div>
                 </div>
+
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">Source document</div>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <Eye className="w-4 h-4 mr-2" /> {selected.sourceDoc}
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-1">
+                    Source document
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                  >
+                    <Eye className="w-4 h-4 mr-2" />
+                    {selected.sourceDoc}
                   </Button>
                 </div>
+
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-2">Approval</div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium mb-2">
+                    Approval
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <StatusBadge status={selected.status} />
+
                     {selected.approvedBy && (
-                      <span className="text-xs text-muted-foreground">by {selected.approvedBy}</span>
+                      <span className="text-xs text-muted-foreground">
+                        by {selected.approvedBy}
+                      </span>
                     )}
                   </div>
                 </div>

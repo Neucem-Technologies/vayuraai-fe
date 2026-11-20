@@ -14,6 +14,34 @@ export type BillingInterval = 'monthly' | 'yearly';
 export type TenantRole = 'consultant_admin' | 'consultant_member';
 export type OrgRole = 'client_viewer' | 'client_contributor';
 
+/** Shared RBAC permission catalogue. Keep in sync between FE and BE. */
+export const PERMISSION_CODES = [
+  'tenant.manage',
+  'team.manage',
+  'org.assign',
+  'billing.manage',
+  'org.create',
+  'facility.manage',
+  'upload.write',
+  'review.write',
+  'review.approve',
+  'emissions.read',
+  'report.write',
+  'report.download',
+  'period.manage',
+  'period.reopen',
+  'audit.read',
+  'assurance.export',
+  'portal.manage',
+  'verifier.manage',
+  'verifier.message',
+  'integration.manage',
+  'factor.manage',
+  'policy.manage',
+] as const;
+
+export type PermissionCode = (typeof PERMISSION_CODES)[number];
+
 export type IngestionStatus =
   | 'queued'
   | 'processing'

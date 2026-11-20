@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listVerifierInbox } from "@/lib/verifiers-api";
+import { useCan } from "@/hooks/use-auth";
 
 export default function VerifierInbox() {
+  const canMessageVerifier = useCan("verifier.message");
   const search = useSearch();
   const initialThread = new URLSearchParams(search).get("thread");
   const [threadId, setThreadId] = useState<string | null>(initialThread);
@@ -22,7 +24,12 @@ export default function VerifierInbox() {
       />
       <Card className="min-h-[32rem] overflow-hidden">
         {threadId ? (
-          <VerificationConversation threadId={threadId} canClose={false} onBack={() => setThreadId(null)} />
+          <VerificationConversation
+          threadId={threadId}
+          canClose={false}
+          canMessage={canMessageVerifier}
+          onBack={() => setThreadId(null)}
+        />
         ) : inbox.isLoading ? (
           <CardContent className="p-4">
             <Skeleton className="h-24 w-full" />

@@ -1,14 +1,25 @@
+
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { useIsConsultantAdmin } from "@/hooks/use-auth";
+import { useCan } from "@/hooks/use-auth";
 import { updateOrganisation } from "@/lib/organisations-api";
-import { inviteClientViewer, listClientViewers, revokeClientViewer } from "@/lib/consultant-api";
+import {
+  inviteClientViewer,
+  listClientViewers,
+  revokeClientViewer,
+} from "@/lib/consultant-api";
 import { ApiRequestError } from "@/lib/api-client";
 import type { OrganisationDto } from "@/lib/organisations-api";
 
@@ -17,10 +28,15 @@ type Props = {
   canEnablePortal: boolean;
 };
 
-export function ClientPortalSettings({ org, canEnablePortal }: Props) {
-  const isAdmin = useIsConsultantAdmin();
+export function ClientPortalSettings({
+  org,
+  canEnablePortal,
+}: Props) {
+  const canManagePortal = useCan("portal.manage");
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
@@ -28,16 +44,30 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
   const { data: viewers = [] } = useQuery({
     queryKey: ["client-viewers", org.id],
     queryFn: () => listClientViewers(org.id),
-    enabled: isAdmin && org.clientViewerEnabled,
+    enabled: canManagePortal && org.clientViewerEnabled,
   });
 
   const togglePortal = useMutation({
-    mutationFn: (enabled: boolean) =>
-      updateOrganisation(org.id, { clientViewerEnabled: enabled }),
+    mutationFn: (enabled: boolean) => {
+      if (!canManagePortal) {
+        throw new Error(
+          "You do not have permission to manage the client portal.",
+        );
+      }
+
+      return updateOrganisation(org.id, {
+        clientViewerEnabled: enabled,
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["clients"] });
-      await queryClient.invalidateQueries({ queryKey: ["client", org.id] });
-      await queryClient.invalidateQueries({ queryKey: ["organisation", org.id] });
+      await queryClient.invalidateQueries({
+        queryKey: ["client", org.id],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["organisation", org.id],
+      });
+
       toast({
         title: "Client portal updated",
         description: "Portal access setting saved for this organisation.",
@@ -47,76 +77,133 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
       toast({
         variant: "destructive",
         title: "Could not update portal",
-        description: e instanceof ApiRequestError ? e.message : "Try again.",
+        description:
+          e instanceof ApiRequestError ? e.message : "Try again.",
       });
     },
   });
 
   const branding = useMutation({
-    mutationFn: (showConsultantBranding: boolean) =>
-      updateOrganisation(org.id, { showConsultantBranding }),
+    mutationFn: (showConsultantBranding: boolean) => {
+      if (!canManagePortal) {
+        throw new Error(
+          "You do not have permission to manage the client portal.",
+        );
+      }
+
+      return updateOrganisation(org.id, {
+        showConsultantBranding,
+      });
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["clients"] });
-      await queryClient.invalidateQueries({ queryKey: ["client", org.id] });
-      await queryClient.invalidateQueries({ queryKey: ["organisation", org.id] });
+      await queryClient.invalidateQueries({
+        queryKey: ["client", org.id],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["organisation", org.id],
+      });
     },
     onError: (e) => {
       toast({
         variant: "destructive",
         title: "Could not update branding",
-        description: e instanceof ApiRequestError ? e.message : "Try again.",
+        description:
+          e instanceof ApiRequestError ? e.message : "Try again.",
       });
     },
   });
 
   const invite = useMutation({
-    mutationFn: () => inviteClientViewer(org.id, email, fullName),
+    mutationFn: () => {
+      if (!canManagePortal) {
+        throw new Error(
+          "You do not have permission to manage the client portal.",
+        );
+      }
+
+      return inviteClientViewer(org.id, email, fullName);
+    },
     onSuccess: (data) => {
       setLastInviteLink(
         `${window.location.origin}${import.meta.env.BASE_URL ?? "/"}accept-client-invite?token=${encodeURIComponent(data.inviteToken)}`,
       );
+
       setEmail("");
       setFullName("");
-      queryClient.invalidateQueries({ queryKey: ["client-viewers", org.id] });
+
+      queryClient.invalidateQueries({
+        queryKey: ["client-viewers", org.id],
+      });
+
       toast({
         title: data.emailSent ? "Invite emailed" : "Invite created",
         description: data.emailSent
           ? "The client will receive a one-time link to set a password."
           : "Email is not configured. Share the invite link below.",
       });
-      if (data.emailSent) setLastInviteLink(null);
+
+      if (data.emailSent) {
+        setLastInviteLink(null);
+      }
     },
     onError: (e) => {
       toast({
         variant: "destructive",
         title: "Invite failed",
-        description: e instanceof ApiRequestError ? e.message : "Try again.",
+        description:
+          e instanceof ApiRequestError ? e.message : "Try again.",
       });
     },
   });
 
   const revoke = useMutation({
-    mutationFn: (userId: string) => revokeClientViewer(org.id, userId),
+    mutationFn: (userId: string) => {
+      if (!canManagePortal) {
+        throw new Error(
+          "You do not have permission to manage the client portal.",
+        );
+      }
+
+      return revokeClientViewer(org.id, userId);
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["client-viewers", org.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["client-viewers", org.id],
+      });
+
       toast({ title: "Access revoked" });
+    },
+    onError: (e) => {
+      toast({
+        variant: "destructive",
+        title: "Could not revoke access",
+        description:
+          e instanceof ApiRequestError ? e.message : "Try again.",
+      });
     },
   });
 
-  if (!isAdmin) return null;
+  if (!canManagePortal) {
+    return null;
+  }
 
   return (
     <Card className="mb-6">
       <CardHeader>
         <CardTitle className="text-base">Client portal</CardTitle>
+
         <CardDescription>
-          Read-only access for {org.shortName} to view emissions summaries and download reports.
+          Read-only access for {org.shortName} to view emissions summaries
+          and download reports.
         </CardDescription>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {!canEnablePortal ? (
           <p className="text-sm text-muted-foreground">
-            Upgrade to Growth, Professional, or Enterprise to enable the client viewer portal for this organisation.
+            Upgrade to Growth, Professional, or Enterprise to enable the
+            client viewer portal for this organisation.
           </p>
         ) : (
           <>
@@ -124,60 +211,94 @@ export function ClientPortalSettings({ org, canEnablePortal }: Props) {
               <Label htmlFor="portal-enabled" className="text-sm">
                 Enable client portal for this organisation
               </Label>
+
               <Switch
                 id="portal-enabled"
                 checked={org.clientViewerEnabled}
-                onCheckedChange={(v) => togglePortal.mutate(v)}
+                onCheckedChange={(value) =>
+                  togglePortal.mutate(value)
+                }
                 disabled={togglePortal.isPending}
               />
             </div>
+
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="show-branding" className="text-sm">
                 Show your firm name on the client dashboard
               </Label>
+
               <Switch
                 id="show-branding"
                 checked={org.showConsultantBranding}
-                onCheckedChange={(v) => branding.mutate(v)}
+                onCheckedChange={(value) =>
+                  branding.mutate(value)
+                }
                 disabled={branding.isPending}
               />
             </div>
+
             {org.clientViewerEnabled && (
               <>
                 <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t">
                   <div>
                     <Label className="text-sm">Client email</Label>
-                    <Input className="mt-1" value={email} onChange={(e) => setEmail(e.target.value)} />
+
+                    <Input
+                      className="mt-1"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
                   </div>
+
                   <div>
                     <Label className="text-sm">Full name</Label>
-                    <Input className="mt-1" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+
+                    <Input
+                      className="mt-1"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
                   </div>
                 </div>
+
                 <Button
                   size="sm"
-                  disabled={!email || !fullName || invite.isPending}
+                  disabled={
+                    !email.trim() ||
+                    !fullName.trim() ||
+                    invite.isPending
+                  }
                   onClick={() => invite.mutate()}
                 >
-                  Invite client viewer
+                  {invite.isPending
+                    ? "Sending invite…"
+                    : "Invite client viewer"}
                 </Button>
+
                 {lastInviteLink && (
                   <p className="text-xs text-muted-foreground break-all">
                     Invite link (dev): {lastInviteLink}
                   </p>
                 )}
+
                 {viewers.length > 0 && (
                   <ul className="text-sm space-y-2 pt-2 border-t">
-                    {viewers.map((v) => (
-                      <li key={v.userId} className="flex justify-between items-center gap-2">
+                    {viewers.map((viewer) => (
+                      <li
+                        key={viewer.userId}
+                        className="flex justify-between items-center gap-2"
+                      >
                         <span>
-                          {v.fullName ?? v.email} · {v.email}
+                          {viewer.fullName ?? viewer.email} · {viewer.email}
                         </span>
+
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-destructive"
-                          onClick={() => revoke.mutate(v.userId)}
+                          disabled={revoke.isPending}
+                          onClick={() => revoke.mutate(viewer.userId)}
                         >
                           Revoke
                         </Button>

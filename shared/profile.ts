@@ -25,6 +25,7 @@ export function isVerifier(profile: MeProfile): boolean {
 }
 
 export function needsBilling(profile: MeProfile): boolean {
+  if (import.meta.env.DEV) return false;
   if (isClientViewer(profile) || isVerifier(profile)) return false;
   if (!profile.tenant) return false;
   return isUnpaidSubscriptionStatus(profile.tenant.subscriptionStatus);
@@ -33,7 +34,7 @@ export function needsBilling(profile: MeProfile): boolean {
 export function resolvePostLoginPath(
   profile: MeProfile,
   onboardingComplete: boolean,
-): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' | '/billing' {
+): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' | '/onboarding/data-sources' | '/onboarding/industry' | '/billing' {
   if (isVerifier(profile)) {
     return '/verifier';
   }

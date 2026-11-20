@@ -1,3 +1,4 @@
+
 import { z } from "zod";
 import { Link, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
@@ -15,10 +16,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useAuthStore } from "@/hooks/use-auth";
 import * as authApi from "@/lib/auth-api";
 import { cn } from "@/lib/utils";
-import { resolvePostLoginPath } from "@vayura/api-contracts/profile";
 import type { UserType } from "@vayura/api-contracts/common";
 import { getAuthErrorPresentation } from "@/lib/auth-errors";
 import { AuthSplitLayout } from "@/components/auth-split-layout";
@@ -32,12 +31,13 @@ const signupSchema = z.object({
 
 export default function Signup() {
   const [, setLocation] = useLocation();
-  const establishSessionFromLogin = useAuthStore((state) => state.establishSessionFromLogin);
   const [isLoading, setIsLoading] = useState(false);
+
   const accountParam =
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("account")
       : null;
+
   const [accountType, setAccountType] = useState<Exclude<UserType, "verifier">>(
     accountParam === "sme" ? "sme" : "consultant",
   );
@@ -54,27 +54,42 @@ export default function Signup() {
 
   async function onSubmit(values: z.infer<typeof signupSchema>) {
     setIsLoading(true);
+
     try {
-      await authApi.register(values.email, values.password, accountType, values.fullName);
-      if (values.companyName.trim()) {
-        try {
-          sessionStorage.setItem('vayura_signup_company', values.companyName.trim());
-        } catch {
-          /* ignore */
-        }
+      await authApi.register(
+        values.email.trim(),
+        values.password,
+        accountType,
+        values.fullName.trim(),
+      );
+
+      try {
+        sessionStorage.setItem("vayura_signup_email", values.email.trim());
+        sessionStorage.setItem(
+          "vayura_signup_company",
+          values.companyName.trim(),
+        );
+      } catch {
+        // Ignore session storage errors.
       }
-      const data = await authApi.login(values.email, values.password);
-      const profile = await establishSessionFromLogin(data.user);
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      const { onboardingComplete } = useAuthStore.getState();
-      const path = resolvePostLoginPath(profile, onboardingComplete);
-      setLocation(path);
-    } catch (e) {
-      const { title, description, emailFieldMessage } = getAuthErrorPresentation(e, "signup");
+
+      setLocation("/verify-email");
+    } catch (error) {
+      const { title, description, emailFieldMessage } =
+        getAuthErrorPresentation(error, "signup");
+
       if (emailFieldMessage) {
-        form.setError("email", { type: "server", message: emailFieldMessage });
+        form.setError("email", {
+          type: "server",
+          message: emailFieldMessage,
+        });
       }
-      toast({ variant: "destructive", title, description });
+
+      toast({
+        variant: "destructive",
+        title,
+        description,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -89,10 +104,16 @@ export default function Signup() {
         <span className="font-bold text-2xl tracking-tight">Vayura</span>
       </div>
 
-      <h2 className="text-3xl font-semibold tracking-tight text-foreground">Create your account</h2>
+      <h2 className="text-3xl font-semibold tracking-tight text-foreground">
+        Create your account
+      </h2>
+
       <p className="mt-2 text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-primary hover:text-primary/90">
+        <Link
+          href="/login"
+          className="font-medium text-primary hover:text-primary/90"
+        >
           Sign in
         </Link>
       </p>
@@ -112,6 +133,7 @@ export default function Signup() {
           <Briefcase className="w-3.5 h-3.5" />
           Consultant
         </button>
+
         <button
           type="button"
           onClick={() => setAccountType("sme")}
@@ -136,7 +158,10 @@ export default function Signup() {
 
       <div className="mt-6">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-5"
+          >
             <FormField
               control={form.control}
               name="fullName"
@@ -158,7 +183,11 @@ export default function Signup() {
                 <FormItem>
                   <FormLabel>Work email</FormLabel>
                   <FormControl>
-                    <Input placeholder="name@company.com" {...field} />
+                    <Input
+                      type="email"
+                      placeholder="name@company.com"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -170,10 +199,18 @@ export default function Signup() {
               name="companyName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{accountType === "consultant" ? "Consulting firm name" : "Organisation name"}</FormLabel>
+                  <FormLabel>
+                    {accountType === "consultant"
+                      ? "Consulting firm name"
+                      : "Organisation name"}
+                  </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder={accountType === "consultant" ? "Your firm name" : "Your company name"}
+                      placeholder={
+                        accountType === "consultant"
+                          ? "Your firm name"
+                          : "Your company name"
+                      }
                       {...field}
                     />
                   </FormControl>
@@ -196,7 +233,11 @@ export default function Signup() {
               )}
             />
 
-            <Button type="submit" className="w-full mt-2" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full mt-2"
+              disabled={isLoading}
+            >
               {isLoading ? "Creating account..." : "Start 14-day free trial"}
               {!isLoading && <ArrowRight className="ml-2 w-4 h-4" />}
             </Button>
@@ -206,7 +247,9 @@ export default function Signup() {
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">or</span>
+                <span className="bg-background px-2 text-muted-foreground">
+                  or
+                </span>
               </div>
             </div>
 

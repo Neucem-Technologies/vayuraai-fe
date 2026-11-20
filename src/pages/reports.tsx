@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +14,13 @@ import {
   Send,
 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/status-badge";
@@ -42,9 +49,14 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useReports, useClient, useFacilities, useEmissions } from "@/hooks/use-data";
+import {
+  useReports,
+  useClient,
+  useFacilities,
+  useEmissions,
+} from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client-store";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useCan } from "@/hooks/use-auth";
 import {
   createReport,
   downloadReportPdf,
@@ -77,7 +89,8 @@ const TEMPLATES = [
     id: "GRI",
     name: "GRI Standards 2021",
     standard: "GRI",
-    description: "Universal, sector-specific, and topic-specific disclosures aligned to GRI 2021.",
+    description:
+      "Universal, sector-specific, and topic-specific disclosures aligned to GRI 2021.",
     sections: 12,
   },
   {
@@ -106,9 +119,11 @@ function statusIcon(status: ReportDto["status"]) {
 }
 
 function statusTone(status: ReportDto["status"]) {
-  if (status === "submitted") return "bg-green-500/10 text-green-600 dark:text-green-400";
+  if (status === "submitted")
+    return "bg-green-500/10 text-green-600 dark:text-green-400";
   if (status === "failed") return "bg-destructive/10 text-destructive";
-  if (status === "final") return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+  if (status === "final")
+    return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
   return "bg-muted text-muted-foreground";
 }
 
@@ -117,12 +132,19 @@ export default function Reports() {
   const orgId = useActiveClientStore((s) => s.activeClientId);
   const tenantId = useAuthStore((s) => s.tenant?.id ?? null);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  const canWriteReport = useCan("report.write");
+  const canDownloadReport = useCan("report.download");
+  const canManageFacilities = useCan("facility.manage");
+
   const { data: client } = useClient(orgId);
   const { data: reports, isLoading } = useReports();
   const { data: facilities = [] } = useFacilities();
   const { data: emissions = [] } = useEmissions();
+
   const [open, setOpen] = useState(false);
-  const [template, setTemplate] = useState<CreateReportRequest["framework"]>("BRSR");
+  const [template, setTemplate] =
+    useState<CreateReportRequest["framework"]>("BRSR");
   const suggestedPeriod = useMemo(
     () => defaultReportingPeriod(emissions.map((e) => e.date).filter(Boolean)),
     [emissions],
@@ -145,7 +167,10 @@ export default function Reports() {
     setPeriodEnd(suggestedPeriod.end);
   }, [orgId, suggestedPeriod.start, suggestedPeriod.end]);
 
-  const boundaryOptions = useMemo(() => reportBoundaryOptions(facilities), [facilities]);
+  const boundaryOptions = useMemo(
+    () => reportBoundaryOptions(facilities),
+    [facilities],
+  );
 
   const matchingActivityCount = useMemo(() => {
     return emissions.filter((e) => {
@@ -157,7 +182,11 @@ export default function Reports() {
 
   const createMutation = useMutation({
     mutationFn: () => {
+      if (!canWriteReport) {
+        throw new Error("You do not have permission to generate reports.");
+      }
       if (!orgId) throw new Error("Select a client organisation first.");
+
       return createReport(orgId, {
         framework: template,
         periodStart,
@@ -166,7 +195,6 @@ export default function Reports() {
       });
     },
     onSuccess: async (report) => {
-      // Show the new row immediately (API returns status "generating").
       queryClient.setQueryData<ReportDto[]>(reportsQueryKey, (prev) => {
         const list = prev ?? [];
         if (list.some((r) => r.id === report.id)) {
@@ -174,9 +202,11 @@ export default function Reports() {
         }
         return [report, ...list];
       });
+
       await queryClient.invalidateQueries({ queryKey: ["reports"] });
       await queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
       await queryClient.invalidateQueries({ queryKey: ["portfolioStats"] });
+
       setOpen(false);
       toast.success("Report generation started", {
         description: `${report.name} will appear as Ready when the PDF finishes.`,
@@ -184,14 +214,23 @@ export default function Reports() {
     },
     onError: (e) => {
       toast.error("Could not generate report", {
-        description: e instanceof ApiRequestError ? e.message : e instanceof Error ? e.message : "Try again.",
+        description:
+          e instanceof ApiRequestError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : "Try again.",
       });
     },
   });
 
   const submitMutation = useMutation({
     mutationFn: (reportId: string) => {
+      if (!canWriteReport) {
+        throw new Error("You do not have permission to submit reports.");
+      }
       if (!orgId) throw new Error("No client selected");
+
       return submitReport(orgId, reportId);
     },
     onSuccess: async () => {
@@ -202,18 +241,23 @@ export default function Reports() {
     },
     onError: (e) => {
       toast.error("Submit failed", {
-        description: e instanceof ApiRequestError ? e.message : "Try again.",
+        description:
+          e instanceof ApiRequestError ? e.message : "Try again.",
       });
     },
   });
 
   const onDownload = async (report: ReportDto) => {
-    if (!orgId) return;
+    if (!canDownloadReport || !orgId) return;
+
     try {
       await downloadReportPdf(orgId, report.id, report.name);
     } catch (e) {
       toast.error("Download failed", {
-        description: e instanceof Error ? e.message : "PDF may still be generating.",
+        description:
+          e instanceof Error
+            ? e.message
+            : "PDF may still be generating.",
       });
     }
   };
@@ -226,8 +270,10 @@ export default function Reports() {
   };
 
   const onPreview = async (report: ReportDto) => {
-    if (!orgId) return;
+    if (!canDownloadReport || !orgId) return;
+
     setPreviewLoadingId(report.id);
+
     try {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       const content = await fetchReportPdfBlob(orgId, report.id);
@@ -236,7 +282,10 @@ export default function Reports() {
       setPreviewOpen(true);
     } catch (e) {
       toast.error("Preview failed", {
-        description: e instanceof Error ? e.message : "PDF may still be generating.",
+        description:
+          e instanceof Error
+            ? e.message
+            : "PDF may still be generating.",
       });
     } finally {
       setPreviewLoadingId(null);
@@ -252,8 +301,8 @@ export default function Reports() {
         />
         <Card>
           <CardContent className="p-8 text-sm text-muted-foreground text-center">
-            Choose a client from the header switcher to view that organisation’s reports. Reports are
-            never shared across firms or clients.
+            Choose a client from the header switcher to view that organisation’s
+            reports. Reports are never shared across firms or clients.
           </CardContent>
         </Card>
       </>
@@ -271,30 +320,42 @@ export default function Reports() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/settings/organization">Manage sites</Link>
-            </Button>
-            <Button onClick={() => setOpen(true)} data-testid="button-new-report">
-              <Plus className="w-4 h-4 mr-2" />
-              New report
-            </Button>
+            {canManageFacilities && (
+              <Button variant="outline" asChild>
+                <Link href="/settings/organization">Manage sites</Link>
+              </Button>
+            )}
+            {canWriteReport && (
+              <Button
+                onClick={() => setOpen(true)}
+                data-testid="button-new-report"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New report
+              </Button>
+            )}
           </div>
         }
       />
 
       <p className="mb-4 text-xs text-muted-foreground">
-        Boundary filters approved activity by site. Inventory totals exclude carbon offsets unless a disclosure explicitly states otherwise.
+        Boundary filters approved activity by site. Inventory totals exclude
+        carbon offsets unless a disclosure explicitly states otherwise.
       </p>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         {TEMPLATES.map((t) => (
           <Card
             key={t.id}
-            className="hover-elevate cursor-pointer"
-            onClick={() => {
-              setTemplate(t.id);
-              setOpen(true);
-            }}
+            className={canWriteReport ? "hover-elevate cursor-pointer" : ""}
+            onClick={
+              canWriteReport
+                ? () => {
+                    setTemplate(t.id);
+                    setOpen(true);
+                  }
+                : undefined
+            }
           >
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -305,13 +366,19 @@ export default function Reports() {
                   {t.standard}
                 </span>
               </div>
-              <h3 className="mt-4 text-base font-semibold text-foreground">{t.name}</h3>
-              <p className="mt-1 text-sm text-muted-foreground line-clamp-3">{t.description}</p>
+              <h3 className="mt-4 text-base font-semibold text-foreground">
+                {t.name}
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground line-clamp-3">
+                {t.description}
+              </p>
               <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
                 <span>{t.sections} sections</span>
-                <span className="flex items-center gap-1 text-primary font-medium">
-                  Generate <ChevronRight className="w-3 h-3" />
-                </span>
+                {canWriteReport && (
+                  <span className="flex items-center gap-1 text-primary font-medium">
+                    Generate <ChevronRight className="w-3 h-3" />
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -322,7 +389,8 @@ export default function Reports() {
         <CardHeader>
           <CardTitle>Recent reports</CardTitle>
           <CardDescription>
-            Drafts, finalized, and submitted reports for {client?.name ?? "this client"}
+            Drafts, finalized, and submitted reports for{" "}
+            {client?.name ?? "this client"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -335,7 +403,9 @@ export default function Reports() {
                   <TableHead>Period</TableHead>
                   <TableHead>Boundary</TableHead>
                   <TableHead>Generated</TableHead>
-                  <TableHead className="text-right">Total emissions</TableHead>
+                  <TableHead className="text-right">
+                    Total emissions
+                  </TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[220px]" />
                 </TableRow>
@@ -349,17 +419,23 @@ export default function Reports() {
                       </TableCell>
                     </TableRow>
                   ))}
+
                 {!isLoading && (reports?.length ?? 0) === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-sm text-muted-foreground">
-                      No reports yet for this client. Generate a BRSR, GRI, GHG, or CBAM pack from approved
-                      emissions.
+                    <TableCell
+                      colSpan={8}
+                      className="text-center py-12 text-sm text-muted-foreground"
+                    >
+                      No reports yet for this client. Generate a BRSR, GRI,
+                      GHG, or CBAM pack from approved emissions.
                     </TableCell>
                   </TableRow>
                 )}
+
                 {!isLoading &&
                   reports?.map((r) => {
                     const Icon = statusIcon(r.status);
+
                     return (
                       <TableRow key={r.id}>
                         <TableCell>
@@ -373,64 +449,97 @@ export default function Reports() {
                               <Icon className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="text-sm font-medium text-foreground">{r.name}</div>
-                              <div className="text-xs text-muted-foreground">by {r.generatedBy}</div>
+                              <div className="text-sm font-medium text-foreground">
+                                {r.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                by {r.generatedBy}
+                              </div>
                               {r.failureReason && (
-                                <div className="text-xs text-destructive mt-0.5">{r.failureReason}</div>
+                                <div className="text-xs text-destructive mt-0.5">
+                                  {r.failureReason}
+                                </div>
                               )}
                             </div>
                           </div>
                         </TableCell>
+
                         <TableCell>
                           <span className="text-xs px-2 py-0.5 rounded bg-muted text-foreground font-medium">
                             {r.framework}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{r.periodLabel}</TableCell>
+
+                        <TableCell className="text-sm text-muted-foreground">
+                          {r.periodLabel}
+                        </TableCell>
+
                         <TableCell className="text-sm text-muted-foreground">
                           {boundaryLabelDisplay(r.boundaryLabel)}
                         </TableCell>
+
                         <TableCell className="text-sm text-muted-foreground">
                           {r.generatedAt ?? "—"}
                         </TableCell>
+
                         <TableCell className="text-right text-sm tabular-nums font-medium">
-                          {r.totalTonnesCO2e.toLocaleString("en-IN", { maximumFractionDigits: 1 })}
-                          <span className="text-xs text-muted-foreground ml-1">tCO2e</span>
+                          {r.totalTonnesCO2e.toLocaleString("en-IN", {
+                            maximumFractionDigits: 1,
+                          })}
+                          <span className="text-xs text-muted-foreground ml-1">
+                            tCO2e
+                          </span>
                         </TableCell>
+
                         <TableCell>
                           <StatusBadge status={r.status} />
                         </TableCell>
+
                         <TableCell>
                           <div className="flex items-center gap-1 justify-end">
-                            {r.status === "final" && (
+                            {canWriteReport && r.status === "final" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 disabled={submitMutation.isPending}
                                 onClick={() => submitMutation.mutate(r.id)}
                               >
-                                <Send className="w-4 h-4 mr-1" /> Submit
+                                <Send className="w-4 h-4 mr-1" />
+                                Submit
                               </Button>
                             )}
-                            {(r.status === "final" || r.status === "submitted") && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled={previewLoadingId === r.id}
-                                  onClick={() => void onPreview(r)}
-                                >
-                                  <Eye className="w-4 h-4 mr-1" />
-                                  {previewLoadingId === r.id ? "Loading…" : "Preview"}
-                                </Button>
-                                <Button variant="ghost" size="sm" onClick={() => void onDownload(r)}>
-                                  <Download className="w-4 h-4 mr-1" /> PDF
-                                </Button>
-                              </>
-                            )}
+
+                            {canDownloadReport &&
+                              (r.status === "final" ||
+                                r.status === "submitted") && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={previewLoadingId === r.id}
+                                    onClick={() => void onPreview(r)}
+                                  >
+                                    <Eye className="w-4 h-4 mr-1" />
+                                    {previewLoadingId === r.id
+                                      ? "Loading…"
+                                      : "Preview"}
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => void onDownload(r)}
+                                  >
+                                    <Download className="w-4 h-4 mr-1" />
+                                    PDF
+                                  </Button>
+                                </>
+                              )}
+
                             {r.status === "generating" && (
                               <Button variant="ghost" size="sm" disabled>
-                                <Eye className="w-4 h-4 mr-1" /> Generating…
+                                <Eye className="w-4 h-4 mr-1" />
+                                Generating…
                               </Button>
                             )}
                           </div>
@@ -446,8 +555,8 @@ export default function Reports() {
 
       <Dialog
         open={previewOpen}
-        onOpenChange={(open) => {
-          if (!open) closePreview();
+        onOpenChange={(isOpen) => {
+          if (!isOpen) closePreview();
           else setPreviewOpen(true);
         }}
       >
@@ -460,107 +569,133 @@ export default function Reports() {
           </DialogHeader>
           <div className="flex-1 min-h-0 rounded-md border overflow-hidden bg-muted/20">
             {previewUrl ? (
-              <iframe title={previewName} src={previewUrl} className="w-full h-full border-0" />
+              <iframe
+                title={previewName}
+                src={previewUrl}
+                className="w-full h-full border-0"
+              />
             ) : null}
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Generate new report</DialogTitle>
-            <DialogDescription>
-              Roll up approved emissions for {client?.name ?? "this client"} into a disclosure PDF.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label className="text-sm">Template</Label>
-              <Select
-                value={template}
-                onValueChange={(v) => setTemplate(v as CreateReportRequest["framework"])}
+      {canWriteReport && (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Generate new report</DialogTitle>
+              <DialogDescription>
+                Roll up approved emissions for{" "}
+                {client?.name ?? "this client"} into a disclosure PDF.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div>
+                <Label className="text-sm">Template</Label>
+                <Select
+                  value={template}
+                  onValueChange={(v) =>
+                    setTemplate(v as CreateReportRequest["framework"])
+                  }
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TEMPLATES.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} ({t.standard})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-sm">From</Label>
+                  <Input
+                    type="date"
+                    value={periodStart}
+                    onChange={(e) => setPeriodStart(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">To</Label>
+                  <Input
+                    type="date"
+                    value={periodEnd}
+                    onChange={(e) => setPeriodEnd(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm">Reporting boundary</Label>
+                <Select value={boundary} onValueChange={setBoundary}>
+                  <SelectTrigger
+                    className="mt-1"
+                    data-testid="select-report-boundary"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {boundaryOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Operations sites only.{" "}
+                  <Link
+                    href="/settings/organization"
+                    className="underline underline-offset-2"
+                  >
+                    Add or rename sites
+                  </Link>
+                </p>
+              </div>
+
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2">
+                <Calendar className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  Period defaults to the Indian FY covering this organisation’s
+                  latest approved activity ({suggestedPeriod.start} →{" "}
+                  {suggestedPeriod.end}).{" "}
+                  <span className="text-foreground font-medium">
+                    {matchingActivityCount} approved line
+                    {matchingActivityCount === 1 ? "" : "s"}
+                  </span>{" "}
+                  match this period and boundary.
+                </span>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  createMutation.isPending || !periodStart || !periodEnd
+                }
+                onClick={() => createMutation.mutate()}
+                data-testid="button-start-report-generation"
               >
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEMPLATES.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} ({t.standard})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-sm">From</Label>
-                <Input
-                  type="date"
-                  value={periodStart}
-                  onChange={(e) => setPeriodStart(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">To</Label>
-                <Input
-                  type="date"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-            <div>
-              <Label className="text-sm">Reporting boundary</Label>
-              <Select value={boundary} onValueChange={setBoundary}>
-                <SelectTrigger className="mt-1" data-testid="select-report-boundary">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {boundaryOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Operations sites only.{" "}
-                <Link href="/settings/organization" className="underline underline-offset-2">
-                  Add or rename sites
-                </Link>
-              </p>
-            </div>
-            <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2">
-              <Calendar className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>
-                Period defaults to the Indian FY covering this organisation’s latest approved activity
-                ({suggestedPeriod.start} → {suggestedPeriod.end}).{" "}
-                <span className="text-foreground font-medium">
-                  {matchingActivityCount} approved line{matchingActivityCount === 1 ? "" : "s"}
-                </span>{" "}
-                match this period and boundary.
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={createMutation.isPending || !periodStart || !periodEnd}
-              onClick={() => createMutation.mutate()}
-              data-testid="button-start-report-generation"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {createMutation.isPending ? "Generating…" : "Start generation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                <FileText className="w-4 h-4 mr-2" />
+                {createMutation.isPending
+                  ? "Generating…"
+                  : "Start generation"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

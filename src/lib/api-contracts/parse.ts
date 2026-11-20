@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { MeProfile } from '@vayura/api-contracts/auth';
+import { PERMISSION_CODES } from '@vayura/api-contracts/common';
 
 const accessPermissionsSchema = z.object({
   readOnly: z.boolean(),
@@ -16,6 +17,7 @@ const accessProfileSchema = z.object({
   verifierOrgId: z.string().nullable().optional().default(null),
   verifierName: z.string().nullable().optional().default(null),
   allowedOrgIds: z.array(z.string()),
+  permissionCodes: z.array(z.enum(PERMISSION_CODES)).optional().default([]),
   permissions: accessPermissionsSchema,
   canEnableClientPortal: z.boolean(),
 });

@@ -1,3 +1,4 @@
+
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -13,20 +14,31 @@ import {
 } from "@/components/ui/table";
 import { fetchClientReports } from "@/lib/client-api";
 import { downloadClientReportPdf } from "@/lib/reports-api";
-import { useAuthStore } from "@/hooks/use-auth";
+import { useAuthStore, useCan } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export default function ClientReports() {
-  const orgId = useAuthStore((s) => s.access?.orgId ?? s.access?.allowedOrgIds?.[0] ?? null);
+  const orgId = useAuthStore(
+    (s) => s.access?.orgId ?? s.access?.allowedOrgIds?.[0] ?? null,
+  );
+
+  const canReadEmissions = useCan("emissions.read");
+  const canDownloadReport = useCan("report.download");
+
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["client-reports", orgId],
     queryFn: fetchClientReports,
-    enabled: !!orgId,
+    enabled: !!orgId && canReadEmissions,
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
   });
 
   const onDownload = async (id: string, name: string) => {
+    if (!canDownloadReport) {
+      toast.error("You do not have permission to download reports.");
+      return;
+    }
+
     try {
       await downloadClientReportPdf(id, name);
     } catch (e) {
@@ -38,14 +50,25 @@ export default function ClientReports() {
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle="Download disclosure reports prepared for your organisation" />
+      <PageHeader
+        title="Reports"
+        subtitle="Download disclosure reports prepared for your organisation"
+      />
+
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
-            <p className="p-6 text-sm text-muted-foreground">Loading reports…</p>
+          {!canReadEmissions ? (
+            <p className="p-6 text-sm text-muted-foreground">
+              You do not have permission to view reports for this organisation.
+            </p>
+          ) : isLoading ? (
+            <p className="p-6 text-sm text-muted-foreground">
+              Loading reports…
+            </p>
           ) : reports.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">
-              No reports are available yet. Your advisor will publish reports here when they are ready.
+              No reports are available yet. Your advisor will publish reports
+              here when they are ready.
             </p>
           ) : (
             <Table>
@@ -58,21 +81,28 @@ export default function ClientReports() {
                   <TableHead className="w-[100px]" />
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {reports.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{r.name}</TableCell>
                     <TableCell>{r.period}</TableCell>
-                    <TableCell className="capitalize">{r.status}</TableCell>
+                    <TableCell className="capitalize">
+                      {r.status}
+                    </TableCell>
                     <TableCell>{r.generatedAt ?? "—"}</TableCell>
+
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void onDownload(r.id, r.name)}
-                      >
-                        <Download className="w-4 h-4 mr-1" /> PDF
-                      </Button>
+                      {canDownloadReport && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void onDownload(r.id, r.name)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          PDF
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

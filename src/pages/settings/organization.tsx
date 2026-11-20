@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -27,7 +28,7 @@ import { AddFacilityDialog } from "@/components/add-facility-dialog";
 import { ClientPortalSettings } from "@/components/client-portal-settings";
 import { useFacilities, useOrganisation } from "@/hooks/use-data";
 import { useActiveClient } from "@/hooks/use-active-client";
-import { useAuthStore, useIsSmeWorkspace } from "@/hooks/use-auth";
+import { useCan, useAuthStore, useIsSmeWorkspace } from "@/hooks/use-auth";
 import { deleteFacility } from "@/lib/facilities-api";
 import { isGenerationFacility } from "@/lib/facilities";
 import { updateOrganisation } from "@/lib/organisations-api";
@@ -53,8 +54,11 @@ export default function SettingsOrganization() {
   const { data: facilities, isLoading } = useFacilities(orgId);
   const { data: organisation } = useOrganisation(orgId);
   const canEnableClientPortal = useAuthStore((s) => s.access?.canEnableClientPortal ?? false);
+  const canManageTenant = useCan("tenant.manage");
+  const canManageFacilities = useCan("facility.manage");
   const isSme = useIsSmeWorkspace();
   const queryClient = useQueryClient();
+
   const [open, setOpen] = useState(false);
   const [addPurpose, setAddPurpose] = useState<FacilityPurpose>("operations");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -98,7 +102,9 @@ export default function SettingsOrganization() {
       });
       return;
     }
+
     if (!activeClient) return;
+
     setLegalName(activeClient.name);
     setShortName(activeClient.shortName);
     setCountry(activeClient.country || "India");
@@ -117,7 +123,11 @@ export default function SettingsOrganization() {
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      if (!canManageTenant) {
+        throw new Error("You do not have permission to manage this organisation.");
+      }
       if (!orgId) throw new Error("Select a client first.");
+
       return updateOrganisation(orgId, {
         legalName: legalName.trim(),
         shortName: shortName.trim(),
@@ -143,6 +153,9 @@ export default function SettingsOrganization() {
 
   const removeFacility = useMutation({
     mutationFn: (facilityId: string) => {
+      if (!canManageFacilities) {
+        throw new Error("You do not have permission to manage facilities.");
+      }
       if (!orgId) throw new Error("Select a client first.");
       return deleteFacility(orgId, facilityId);
     },
@@ -158,6 +171,7 @@ export default function SettingsOrganization() {
   });
 
   const canSave =
+    canManageTenant &&
     !!orgId &&
     legalName.trim().length >= 2 &&
     shortName.trim().length >= 1 &&
@@ -167,12 +181,14 @@ export default function SettingsOrganization() {
     () => (facilities ?? []).filter((f) => !isGenerationFacility(f.purpose)),
     [facilities],
   );
+
   const generationSites = useMemo(
     () => (facilities ?? []).filter((f) => isGenerationFacility(f.purpose)),
     [facilities],
   );
 
   const openAdd = (purpose: FacilityPurpose) => {
+    if (!canManageFacilities) return;
     setAddPurpose(purpose);
     setOpen(true);
   };
@@ -199,8 +215,11 @@ export default function SettingsOrganization() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Legal entity</CardTitle>
-            <CardDescription>Used on BRSR Section A, GRI 2, and GHG cover pages for {clientName}</CardDescription>
+            <CardDescription>
+              Used on BRSR Section A, GRI 2, and GHG cover pages for {clientName}
+            </CardDescription>
           </CardHeader>
+
           <CardContent className="space-y-4">
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
@@ -209,22 +228,32 @@ export default function SettingsOrganization() {
                   className="mt-1"
                   value={legalName}
                   onChange={(e) => setLegalName(e.target.value)}
+                  disabled={!canManageTenant}
                   data-testid="input-client-legal-name"
                 />
               </div>
+
               <div>
                 <Label className="text-sm">Short name</Label>
                 <Input
                   className="mt-1"
                   value={shortName}
                   onChange={(e) => setShortName(e.target.value)}
+                  disabled={!canManageTenant}
                   data-testid="input-client-short-name"
                 />
               </div>
+
               <div>
                 <Label className="text-sm">Country</Label>
-                <Select value={country} onValueChange={setCountry}>
-                  <SelectTrigger className="mt-1" data-testid="select-client-country"><SelectValue /></SelectTrigger>
+                <Select
+                  value={country}
+                  onValueChange={setCountry}
+                  disabled={!canManageTenant}
+                >
+                  <SelectTrigger className="mt-1" data-testid="select-client-country">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="India">India</SelectItem>
                     <SelectItem value="Singapore">Singapore</SelectItem>
@@ -234,6 +263,7 @@ export default function SettingsOrganization() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div>
                 <Label className="text-sm">Industry</Label>
                 <Input
@@ -241,17 +271,48 @@ export default function SettingsOrganization() {
                   value={industry}
                   onChange={(e) => setIndustry(e.target.value)}
                   placeholder="e.g. Manufacturing"
+                  disabled={!canManageTenant}
                   data-testid="input-client-industry"
                 />
               </div>
+
               <div>
                 <Label className="text-sm">Engagement since</Label>
                 <Input className="mt-1" value={activeClient?.engagementSince ?? ""} readOnly />
               </div>
-              <ProfileField label="CIN" value={reporting.cin} onChange={(v) => patchReporting("cin", v)} placeholder="L12345MH2010PLC123456" testId="input-client-cin" />
-              <ProfileField label="LEI" value={reporting.lei} onChange={(v) => patchReporting("lei", v)} placeholder="20-character LEI" testId="input-client-lei" />
-              <ProfileField label="GSTIN" value={reporting.gstin} onChange={(v) => patchReporting("gstin", v)} testId="input-client-gstin" />
-              <ProfileField label="Year of incorporation" value={reporting.yearOfIncorporation} onChange={(v) => patchReporting("yearOfIncorporation", v)} placeholder="2012" testId="input-client-year" />
+
+              <ProfileField
+                label="CIN"
+                value={reporting.cin}
+                onChange={(v) => patchReporting("cin", v)}
+                placeholder="L12345MH2010PLC123456"
+                testId="input-client-cin"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="LEI"
+                value={reporting.lei}
+                onChange={(v) => patchReporting("lei", v)}
+                placeholder="20-character LEI"
+                testId="input-client-lei"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="GSTIN"
+                value={reporting.gstin}
+                onChange={(v) => patchReporting("gstin", v)}
+                testId="input-client-gstin"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Year of incorporation"
+                value={reporting.yearOfIncorporation}
+                onChange={(v) => patchReporting("yearOfIncorporation", v)}
+                placeholder="2012"
+                testId="input-client-year"
+                disabled={!canManageTenant}
+              />
+
               <div className="sm:col-span-2">
                 <Label className="text-sm">Registered office address</Label>
                 <Textarea
@@ -259,30 +320,103 @@ export default function SettingsOrganization() {
                   rows={2}
                   value={reporting.registeredOfficeAddress}
                   onChange={(e) => patchReporting("registeredOfficeAddress", e.target.value)}
+                  disabled={!canManageTenant}
                   data-testid="input-client-address"
                 />
               </div>
-              <ProfileField label="Website" value={reporting.website} onChange={(v) => patchReporting("website", v)} placeholder="https://" testId="input-client-website" />
-              <ProfileField label="Entity email" value={reporting.email} onChange={(v) => patchReporting("email", v)} testId="input-client-email" />
-              <ProfileField label="Telephone" value={reporting.telephone} onChange={(v) => patchReporting("telephone", v)} testId="input-client-telephone" />
-              <ProfileField label="Stock exchange(s)" value={reporting.stockExchanges} onChange={(v) => patchReporting("stockExchanges", v)} placeholder="NSE, BSE" testId="input-client-exchanges" />
-              <ProfileField label="Paid-up capital (INR)" value={reporting.paidUpCapitalInr} onChange={(v) => patchReporting("paidUpCapitalInr", v)} testId="input-client-paid-up" />
-              <ProfileField label="Permanent employees" value={reporting.employeeCount} onChange={(v) => patchReporting("employeeCount", v)} testId="input-client-employees" />
-              <ProfileField label="Workers (other than employees)" value={reporting.workerCount} onChange={(v) => patchReporting("workerCount", v)} testId="input-client-workers" />
-              <ProfileField label="Annual turnover (INR)" value={reporting.annualTurnoverInr} onChange={(v) => patchReporting("annualTurnoverInr", v)} testId="input-client-turnover" />
-              <ProfileField label="Reporting contact name" value={reporting.contactName} onChange={(v) => patchReporting("contactName", v)} testId="input-client-contact-name" />
-              <ProfileField label="Reporting contact email" value={reporting.contactEmail} onChange={(v) => patchReporting("contactEmail", v)} testId="input-client-contact-email" />
-              <ProfileField label="Reporting contact phone" value={reporting.contactPhone} onChange={(v) => patchReporting("contactPhone", v)} testId="input-client-contact-phone" />
+
+              <ProfileField
+                label="Website"
+                value={reporting.website}
+                onChange={(v) => patchReporting("website", v)}
+                placeholder="https://"
+                testId="input-client-website"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Entity email"
+                value={reporting.email}
+                onChange={(v) => patchReporting("email", v)}
+                testId="input-client-email"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Telephone"
+                value={reporting.telephone}
+                onChange={(v) => patchReporting("telephone", v)}
+                testId="input-client-telephone"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Stock exchange(s)"
+                value={reporting.stockExchanges}
+                onChange={(v) => patchReporting("stockExchanges", v)}
+                placeholder="NSE, BSE"
+                testId="input-client-exchanges"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Paid-up capital (INR)"
+                value={reporting.paidUpCapitalInr}
+                onChange={(v) => patchReporting("paidUpCapitalInr", v)}
+                testId="input-client-paid-up"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Permanent employees"
+                value={reporting.employeeCount}
+                onChange={(v) => patchReporting("employeeCount", v)}
+                testId="input-client-employees"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Workers (other than employees)"
+                value={reporting.workerCount}
+                onChange={(v) => patchReporting("workerCount", v)}
+                testId="input-client-workers"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Annual turnover (INR)"
+                value={reporting.annualTurnoverInr}
+                onChange={(v) => patchReporting("annualTurnoverInr", v)}
+                testId="input-client-turnover"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Reporting contact name"
+                value={reporting.contactName}
+                onChange={(v) => patchReporting("contactName", v)}
+                testId="input-client-contact-name"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Reporting contact email"
+                value={reporting.contactEmail}
+                onChange={(v) => patchReporting("contactEmail", v)}
+                testId="input-client-contact-email"
+                disabled={!canManageTenant}
+              />
+              <ProfileField
+                label="Reporting contact phone"
+                value={reporting.contactPhone}
+                onChange={(v) => patchReporting("contactPhone", v)}
+                testId="input-client-contact-phone"
+                disabled={!canManageTenant}
+              />
             </div>
-            <div className="flex justify-end pt-4 border-t">
-              <Button
-                onClick={() => saveMutation.mutate()}
-                disabled={!canSave}
-                data-testid="button-save-client"
-              >
-                {saveMutation.isPending ? "Saving…" : "Save changes"}
-              </Button>
-            </div>
+
+            {canManageTenant && (
+              <div className="flex justify-end pt-4 border-t">
+                <Button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!canSave}
+                  data-testid="button-save-client"
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -290,14 +424,18 @@ export default function SettingsOrganization() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Reporting boundary</CardTitle>
-              <CardDescription>What's included in this client's inventory</CardDescription>
+              <CardDescription>
+                What's included in this client's inventory
+              </CardDescription>
             </CardHeader>
+
             <CardContent className="space-y-3">
               <div>
                 <Label className="text-sm">Consolidation approach</Label>
                 <Select
                   value={consolidationApproach}
                   onValueChange={(v) => setConsolidationApproach(v as ConsolidationApproach)}
+                  disabled={!canManageTenant}
                 >
                   <SelectTrigger className="mt-1" data-testid="select-consolidation">
                     <SelectValue />
@@ -312,6 +450,7 @@ export default function SettingsOrganization() {
                   GHG Protocol organisational boundary. Saved with the legal entity.
                 </p>
               </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="text-center p-4 rounded-md border">
                   <div className="text-lg font-semibold tabular-nums">{operationSites.length}</div>
@@ -322,23 +461,29 @@ export default function SettingsOrganization() {
                   <div className="text-[11px] text-muted-foreground">Generation / offset</div>
                 </div>
               </div>
-              <Button
-                className="w-full"
-                variant="outline"
-                size="sm"
-                onClick={() => saveMutation.mutate()}
-                disabled={!canSave}
-                data-testid="button-save-boundary"
-              >
-                {saveMutation.isPending ? "Saving…" : "Save boundary"}
-              </Button>
+
+              {canManageTenant && (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!canSave}
+                  data-testid="button-save-boundary"
+                >
+                  {saveMutation.isPending ? "Saving…" : "Save boundary"}
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>
       </div>
 
       {organisation && (
-        <ClientPortalSettings org={organisation} canEnablePortal={canEnableClientPortal} />
+        <ClientPortalSettings
+          org={organisation}
+          canEnablePortal={canEnableClientPortal}
+        />
       )}
 
       <Card>
@@ -350,26 +495,32 @@ export default function SettingsOrganization() {
                 Offices, plants, and other sites that consume energy. These appear in upload assignment and report boundaries.
               </CardDescription>
             </div>
-            <Button
-              size="sm"
-              onClick={() => openAdd("operations")}
-              disabled={!orgId}
-              data-testid="button-add-facility"
-            >
-              <Plus className="w-4 h-4 mr-2" /> Add facility
-            </Button>
+
+            {canManageFacilities && (
+              <Button
+                size="sm"
+                onClick={() => openAdd("operations")}
+                disabled={!orgId}
+                data-testid="button-add-facility"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add facility
+              </Button>
+            )}
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="grid gap-3">
             {isLoading && Array.from({ length: 2 }).map((_, i) => (
               <Skeleton key={i} className="h-20" />
             ))}
+
             {!isLoading && operationSites.length === 0 && (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                 No operations sites yet. Add locations so uploads can be assigned to a consuming facility.
               </div>
             )}
+
             {!isLoading && operationSites.map((f) => (
               <FacilityRow
                 key={f.id}
@@ -380,6 +531,7 @@ export default function SettingsOrganization() {
                 employees={f.employees}
                 generation={false}
                 deleting={deletingId === f.id}
+                canDelete={canManageFacilities}
                 onDelete={() => {
                   setDeletingId(f.id);
                   removeFacility.mutate(f.id);
@@ -399,25 +551,31 @@ export default function SettingsOrganization() {
                 Solar, wind, hydro, or captive power. Self-consumed kWh lowers residual Scope 2; it is not netted off the BRSR gross total.
               </CardDescription>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => openAdd("generation")}
-              disabled={!orgId}
-              data-testid="button-add-generation-facility"
-            >
-              <Plus className="w-4 h-4 mr-2" /> Add generation site
-            </Button>
+
+            {canManageFacilities && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openAdd("generation")}
+                disabled={!orgId}
+                data-testid="button-add-generation-facility"
+              >
+                <Plus className="w-4 h-4 mr-2" /> Add generation site
+              </Button>
+            )}
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="grid gap-3">
             {isLoading && <Skeleton className="h-20" />}
+
             {!isLoading && generationSites.length === 0 && (
               <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
                 No generation sites yet. Add rooftop solar, wind, or a captive plant to track energy that can reduce residual emissions.
               </div>
             )}
+
             {!isLoading && generationSites.map((f) => (
               <FacilityRow
                 key={f.id}
@@ -428,6 +586,7 @@ export default function SettingsOrganization() {
                 employees={f.employees}
                 generation
                 deleting={deletingId === f.id}
+                canDelete={canManageFacilities}
                 onDelete={() => {
                   setDeletingId(f.id);
                   removeFacility.mutate(f.id);
@@ -438,7 +597,7 @@ export default function SettingsOrganization() {
         </CardContent>
       </Card>
 
-      {orgId && (
+      {orgId && canManageFacilities && (
         <AddFacilityDialog
           orgId={orgId}
           open={open}
@@ -465,6 +624,7 @@ function FacilityRow({
   employees,
   generation,
   deleting,
+  canDelete,
   onDelete,
 }: {
   name: string;
@@ -474,37 +634,51 @@ function FacilityRow({
   employees: number;
   generation: boolean;
   deleting: boolean;
+  canDelete: boolean;
   onDelete: () => void;
 }) {
   return (
     <div className="rounded-md border p-4 flex items-start gap-4 hover-elevate">
       <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-        {generation ? <Sun className="w-5 h-5 text-primary" /> : <Building2 className="w-5 h-5 text-primary" />}
+        {generation ? (
+          <Sun className="w-5 h-5 text-primary" />
+        ) : (
+          <Building2 className="w-5 h-5 text-primary" />
+        )}
       </div>
+
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-medium text-foreground">{name}</div>
             <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-3">
-              <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {address || "—"}</span>
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {address || "—"}
+              </span>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive shrink-0"
-            disabled={deleting}
-            onClick={onDelete}
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
+
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive shrink-0"
+              disabled={deleting}
+              onClick={onDelete}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
         </div>
+
         <div className="flex items-center gap-3 mt-2 text-xs">
           <span className="px-2 py-0.5 rounded bg-muted font-medium">{type}</span>
           {generation ? (
             <span className="text-muted-foreground">Generation / offset</span>
           ) : (
-            <span className="text-muted-foreground flex items-center gap-1"><UsersIcon className="w-3 h-3" /> {employees} employees</span>
+            <span className="text-muted-foreground flex items-center gap-1">
+              <UsersIcon className="w-3 h-3" /> {employees} employees
+            </span>
           )}
           <span className="text-muted-foreground">{country}</span>
         </div>
@@ -519,12 +693,14 @@ function ProfileField({
   onChange,
   placeholder,
   testId,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   testId: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -534,6 +710,7 @@ function ProfileField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
         data-testid={testId}
       />
     </div>
