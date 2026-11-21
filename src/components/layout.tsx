@@ -19,6 +19,7 @@ import {
   Leaf,
   UserSearch,
   ClipboardList,
+  Cable,
 } from "lucide-react";
 import { useAuthStore, useIsSmeWorkspace, useTenant } from "@/hooks/use-auth";
 import { useActiveClientStore } from "@/hooks/use-active-client";
@@ -56,6 +57,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const fyOptions = listRecentFys(5);
 
   const isSme = useIsSmeWorkspace();
+  const canManageConnectors = useAuthStore((s) => s.access?.permissions.canManageTenant ?? false);
   const hidePortfolio = isSme;
 
   // Ensure an active organisation is selected once the list loads (consultant portfolio or SME solo).
@@ -84,6 +86,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const clientNavItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: Upload, label: "Uploads", href: "/uploads" },
+    ...(canManageConnectors
+      ? [{ icon: Cable, label: "Connectors", href: "/settings/connectors" }]
+      : []),
     { icon: Cloud, label: "Emissions", href: "/emissions" },
     { icon: FileText, label: "Reports", href: "/reports" },
     { icon: Leaf, label: "Offsets", href: "/offsets" },

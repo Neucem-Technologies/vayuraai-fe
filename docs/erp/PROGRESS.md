@@ -1,6 +1,6 @@
 # ERP file import — progress
 
-Frontend branch: `feat/erp-tally-excel`.
+Frontend branch: `feat/erp-tally-live` (file import remains on `feat/erp-tally-excel` history).
 
 The stage checklist, decisions, migration SQL, and verification notes are maintained in the backend repo at `vayuraai-be/docs/erp/PROGRESS.md` and mirrored here after each stage.
 
@@ -18,6 +18,12 @@ The stage checklist, decisions, migration SQL, and verification notes are mainta
 - [ ] S9 Automated verification
 - [ ] S10 Self-audit
 - [ ] S11 Final report
+
+## Live Tally pull
+
+Frontend branch for this slice: `feat/erp-tally-live`.
+
+File import is unchanged. A firm admin (`canManageTenant`) can save a TallyPrime HTTP gateway (host, port, company name) and pull one financial year of vouchers. The pull stores the raw XML as an upload and stages lines for the existing review queue. Nothing is auto-approved. There is no password, OAuth, or credential UI. Excel file import stays on Uploads.
 
 ## Decisions
 
