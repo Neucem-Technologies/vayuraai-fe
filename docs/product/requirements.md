@@ -119,6 +119,7 @@ Post-login routing (`resolvePostLoginPath`): verifier → `/verifier`; client vi
 | [roles-and-permissions.md](./roles-and-permissions.md) | **Roles, users, capability matrix** (firm / SME / viewer / verifier) |
 | [../architecture/rbac-permissions-plan.md](../architecture/rbac-permissions-plan.md) | RBAC module plan (discuss → implement) |
 | [../architecture/erp-integration-plan.md](../architecture/erp-integration-plan.md) | ERP integration plan (discuss → implement) |
+| [../architecture/erp-data-catalogue.md](../architecture/erp-data-catalogue.md) | ERP row fields to fetch (Zoho / Tally / SAP / CSV) |
 | [feature-client-viewer-portal.md](./feature-client-viewer-portal.md) | Client portal behaviour (shipped; keep as reference) |
 | [ui-ux-foundation.md](./ui-ux-foundation.md) | UI stack conventions |
 | [../development-plan.md](../development-plan.md) | Frontend module status / next work |

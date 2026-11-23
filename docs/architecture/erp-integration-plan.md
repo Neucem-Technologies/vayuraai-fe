@@ -2,7 +2,7 @@
 
 **Owner (assigned):** Ashish Pawar  
 **Status:** Draft for team discussion — **do not implement until aligned**  
-**Related:** product flows · assurance / period controls · Phase 3 roadmap (ERP/Tally pilot)
+**Related:** product flows · assurance / period controls · Phase 3 roadmap (ERP/Tally pilot) · [erp-data-catalogue.md](./erp-data-catalogue.md) (row fields to fetch)
 
 ---
 
@@ -163,7 +163,7 @@ Success for pilot: 1–2 real clients, electricity + fuel lines → review → r
 
 1. Agree Phase A scope + first pilot vendor  
 2. Spike: auth + sample pull for chosen ERP (time-boxed)  
-3. Spec Canonical DTO in `@vayura/api-contracts`  
+3. Spec Canonical DTO in `@vayura/api-contracts` (field list: [erp-data-catalogue.md](./erp-data-catalogue.md))  
 4. Implement behind feature flag; pilot with 1 tenant  
 
 ---
