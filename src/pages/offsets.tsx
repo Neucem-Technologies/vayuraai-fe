@@ -162,7 +162,7 @@ export default function Offsets() {
   if (!orgId) {
     return (
       <div className="p-6">
-        <PageHeader title="Offsets" description="Select an organisation to manage offset records." />
+        <PageHeader title="Offsets" subtitle="Select an organisation to manage offset records." />
       </div>
     );
   }
@@ -171,7 +171,7 @@ export default function Offsets() {
     <div className="p-6 space-y-6">
       <PageHeader
         title="Offsets"
-        description="Record internal offset holdings for this organisation. Offsets are not auto-netted off GHG, BRSR, GRI, or CBAM totals. Marking retired is self-declared and requires evidence — it is not third-party verification."
+        subtitle="Record internal offset holdings for this organisation. Offsets are not auto-netted off GHG, BRSR, GRI, or CBAM totals. Marking retired is self-declared and requires evidence — it is not third-party verification."
         actions={
           <Button onClick={() => setAddOpen(true)} data-testid="button-add-offset">
             <Plus className="w-4 h-4 mr-1.5" />

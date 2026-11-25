@@ -92,6 +92,8 @@ export default function Billing() {
       tenantRole: tenant.role,
       orgRole: null,
       orgId: null,
+      verifierOrgId: null,
+      verifierName: null,
       allowedOrgIds: [],
       permissions: {
         readOnly: false,

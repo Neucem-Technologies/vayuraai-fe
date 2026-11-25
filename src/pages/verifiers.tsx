@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { useAuthStore, useIsConsultantAdmin, useIsSmeWorkspace } from "@/hooks/use-auth";
+import { useIsConsultantAdmin, useIsSmeWorkspace } from "@/hooks/use-auth";
 import { useClients } from "@/hooks/use-data";
 import { useActiveClientStore } from "@/hooks/use-active-client";
 import { toast } from "@/hooks/use-toast";
@@ -46,7 +46,6 @@ export default function Verifiers() {
   const search = useSearch();
   const initialThread = new URLSearchParams(search).get("thread");
   const isAdmin = useIsConsultantAdmin();
-  const tenant = useAuthStore((s) => s.tenant);
   const isSme = useIsSmeWorkspace();
   const queryClient = useQueryClient();
   const clients = useClients();
