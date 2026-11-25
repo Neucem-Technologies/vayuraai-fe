@@ -33,7 +33,15 @@ export function needsBilling(profile: MeProfile): boolean {
 export function resolvePostLoginPath(
   profile: MeProfile,
   onboardingComplete: boolean,
-): '/client/dashboard' | '/verifier' | '/dashboard' | '/clients' | '/onboarding/organization' | '/billing' {
+):
+    | '/client/dashboard'
+    | '/verifier'
+    | '/dashboard'
+    | '/clients'
+    | '/onboarding/organization'
+    | '/onboarding/data-sources'
+    | '/onboarding/industry'
+    | '/billing' {
   if (isVerifier(profile)) {
     return '/verifier';
   }
