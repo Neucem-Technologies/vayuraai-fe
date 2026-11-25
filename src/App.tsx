@@ -37,6 +37,7 @@ import SettingsOrganization from "@/pages/settings/organization";
 import SettingsUsers from "@/pages/settings/users";
 import SettingsFirm from "@/pages/settings/firm";
 import SettingsControls from "@/pages/settings/controls";
+import SettingsConnectors from "@/pages/settings/connectors";
 import Policies from "@/pages/policies";
 import Verifiers from "@/pages/verifiers";
 import VerifierInbox from "@/pages/verifier-inbox";
@@ -231,6 +232,7 @@ function Router() {
       <Route path="/settings/organization" component={() => <ProtectedRoute component={SettingsOrganization} requireActiveClient />} />
       <Route path="/settings/users" component={() => <ProtectedRoute component={SettingsUsers} />} />
       <Route path="/settings/controls" component={() => <ProtectedRoute component={SettingsControls} requireActiveClient />} />
+      <Route path="/settings/connectors" component={() => <ProtectedRoute component={SettingsConnectors} requireActiveClient />} />
       <Route path="/policies" component={() => <ProtectedRoute component={Policies} consultantOnly />} />
       <Route path="/verifiers" component={() => <ProtectedRoute component={Verifiers} />} />
       <Route path="/verifier" component={() => <VerifierProtectedRoute component={VerifierInbox} />} />

@@ -1,0 +1,17 @@
+---
+description: ERP file-import rules for Tally and Excel. Zoho is reserved, not implemented.
+globs: "**/*"
+alwaysApply: true
+---
+
+# ERP integration (Tally / Excel)
+
+Read `docs/erp/PROGRESS.md` before continuing. Resume at the first unfinished stage. Backend implementation lives in `vayuraai-be` on branch `feat/erp-tally-excel`.
+
+- Imported lines stay staged until a human approves them. Never auto-approve.
+- Connectors UI is visible only when `permissions.canManageTenant`. The backend is the real gate.
+- Upload and review keep today's permissions and maker-checker. Show per-line flags, exclude, correction approve, and 409 `ALREADY_POSTED`.
+- Source filter on emissions and dashboard: All, Upload, Tally, Excel, Manual.
+- No Zoho API, OAuth, or credential encryption UI.
+- Loading, empty, error, disabled, and permission-denied states are required on new screens.
+- Do not redesign unrelated pages.

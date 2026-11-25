@@ -179,6 +179,22 @@ Keep in sync with `src/lib/auth-errors.ts` `MESSAGES` object. When backend adds 
 - **No demo credentials** or demo banners on login/signup.
 - Signup sends `userType` (`consultant` | `sme`) to register API.
 
+### 4.6 Connector error catalog (frontend)
+
+Tally live pull uses `src/lib/integration-errors.ts`. Show `ApiRequestError.message` when it is present.
+
+| `error.code` | When | User action |
+|--------------|------|-------------|
+| `TALLY_NOT_CONFIGURED` | No Tally host saved | Save the gateway address |
+| `TALLY_UNREACHABLE` | Gateway did not respond | Open TallyPrime, check host and port |
+| `TALLY_REJECTED` | Tally returned an error or an oversized payload | Load the company or shorten the date range |
+| `CONNECTION_DISABLED` | Live connection is off | Turn it back on and save |
+| `PULL_IN_PROGRESS` | A pull is still queued or running | Wait, then review it in Uploads |
+| `INVALID_WINDOW` | Dates missing, reversed, or longer than 366 days | Choose one financial year |
+| `FORBIDDEN` | Caller is not a firm admin | Stop; connectors stay hidden |
+
+There is no Tally password, OAuth, or credential field.
+
 ---
 
 ## 5. Adding a new feature — agent checklist
