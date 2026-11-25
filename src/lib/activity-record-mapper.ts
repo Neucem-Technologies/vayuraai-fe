@@ -20,6 +20,8 @@ export function activityRecordToEmission(row: ActivityRecordDto): EmissionRecord
     factorRegion: row.factorRegion,
     kgCO2e: row.kgCO2e,
     sourceDoc: row.sourceFilename,
+    sourceKind: row.sourceKind,
+    externalLineId: row.externalLineId,
     status: 'Approved',
     approvedBy: row.approvedByUserId ? 'Team member' : undefined,
     approvedAt: row.approvedAt,

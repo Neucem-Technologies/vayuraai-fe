@@ -60,6 +60,15 @@ export type ExtractedLineItemDto = {
   factorSourceKey: string;
   factorSourceName: string;
   kgCO2e: number;
+  erpModule?: 'expense' | 'bill' | 'journal' | 'purchase' | 'travel' | 'inventory_issue' | null;
+  documentNumber?: string | null;
+  lineNumber?: number | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  erpStatus?: string | null;
+  syncedAt?: string | null;
+  amendmentNumber?: string | null;
+  skippedReason?: string | null;
   /** Billing unit before spend resolution (e.g. contract, month). */
   originalUnit?: string;
   /** INR spend for billing-unit lines when quantity is not the activity amount. */
@@ -106,10 +115,15 @@ export type ApproveUploadResponse = {
 export type RejectUploadRequest = { reason: string };
 export type RejectUploadResponse = { upload: UploadDto };
 
+export type ActivitySourceKindDto = 'upload' | 'excel' | 'tally' | 'zoho' | 'manual';
+
 export type ActivityRecordDto = {
   id: string;
   organisationId: string;
   documentUploadId: string;
+  sourceKind: ActivitySourceKindDto;
+  sourceLabel: string | null;
+  externalLineId: string | null;
   sourceLineId: string;
   description: string;
   category: string;
@@ -132,6 +146,9 @@ export type ActivityRecordDto = {
   factorSourceName: string;
   kgCO2e: number;
   sourceFilename: string;
+  scope3Category: number | null;
+  currency: string | null;
+  amount: number | null;
   approvedByUserId: string;
   approvedAt: string;
 };

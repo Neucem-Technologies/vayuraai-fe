@@ -69,7 +69,7 @@ export default function FindConsultants() {
     <div className="p-6 space-y-6">
       <PageHeader
         title="Find a consultant"
-        description="Browse firms listed on Vayura. Listing is free. An enquiry is an introduction request only."
+        subtitle="Browse firms listed on Vayura. Listing is free. An enquiry is an introduction request only."
       />
 
       <div className="relative max-w-md">
