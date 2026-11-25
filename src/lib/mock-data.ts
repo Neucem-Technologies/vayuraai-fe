@@ -196,6 +196,8 @@ export interface EmissionRecord {
   factorRegion?: string;
   kgCO2e: number;
   sourceDoc: string;
+  sourceKind?: "upload" | "excel" | "tally" | "zoho" | "manual";
+  externalLineId?: string | null;
   status: "Approved" | "Ready for Approval" | "Needs Review";
   approvedBy?: string;
   approvedAt?: string;
