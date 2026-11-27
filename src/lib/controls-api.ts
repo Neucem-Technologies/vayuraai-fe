@@ -55,13 +55,26 @@ export async function reopenReportingPeriod(orgId: string, periodId: string): Pr
   return data.period;
 }
 
+export type ListAuditEventsOptions = {
+  limit?: number;
+  cursor?: string;
+  from?: string;
+  to?: string;
+  action?: string;
+  entityType?: string;
+};
+
 export async function listAuditEvents(
   orgId: string,
-  options?: { limit?: number; cursor?: string },
+  options?: ListAuditEventsOptions,
 ): Promise<{ events: AuditEventDto[]; nextCursor: string | null }> {
   const params = new URLSearchParams();
   if (options?.limit) params.set("limit", String(options.limit));
   if (options?.cursor) params.set("cursor", options.cursor);
+  if (options?.from) params.set("from", options.from);
+  if (options?.to) params.set("to", options.to);
+  if (options?.action) params.set("action", options.action);
+  if (options?.entityType) params.set("entityType", options.entityType);
   const qs = params.toString();
   return apiFetch<{ events: AuditEventDto[]; nextCursor: string | null }>(
     `/api/v1/organisations/${orgId}/audit/events${qs ? `?${qs}` : ""}`,

@@ -13,6 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -33,6 +40,23 @@ import {
 } from "@/lib/controls-api";
 import { listRecentFys, readStoredReportingFy } from "@/lib/reporting-fy";
 import { toast } from "sonner";
+
+const AUDIT_ACTION_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "All actions" },
+  { value: "upload_created", label: "Upload created" },
+  { value: "review_draft_saved", label: "Review draft saved" },
+  { value: "review_approved", label: "Review approved" },
+  { value: "review_rejected", label: "Review rejected" },
+  { value: "report_created", label: "Report created" },
+  { value: "report_submitted", label: "Report submitted" },
+  { value: "report_downloaded", label: "Report downloaded" },
+  { value: "period_closed", label: "Period closed" },
+  { value: "period_reopened", label: "Period reopened" },
+  { value: "assurance_pack_downloaded", label: "Assurance pack downloaded" },
+  { value: "verifier_invited", label: "Verifier invited" },
+  { value: "verification_opened", label: "Verification opened" },
+  { value: "verification_closed", label: "Verification closed" },
+];
 
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString("en-IN", {
@@ -55,6 +79,14 @@ export default function SettingsControls() {
   const [periodEnd, setPeriodEnd] = useState(defaultFy.periodEnd);
   const [packStart, setPackStart] = useState(defaultFy.periodStart);
   const [packEnd, setPackEnd] = useState(defaultFy.periodEnd);
+  const [auditFromDraft, setAuditFromDraft] = useState(defaultFy.periodStart);
+  const [auditToDraft, setAuditToDraft] = useState(defaultFy.periodEnd);
+  const [auditActionDraft, setAuditActionDraft] = useState("all");
+  const [auditFilters, setAuditFilters] = useState<{
+    from?: string;
+    to?: string;
+    action?: string;
+  }>({ from: defaultFy.periodStart, to: defaultFy.periodEnd });
 
   const periods = useQuery({
     queryKey: ["reporting-periods", orgId],
@@ -63,12 +95,33 @@ export default function SettingsControls() {
   });
 
   const audits = useQuery({
-    queryKey: ["audit-events", orgId],
-    queryFn: () => listAuditEvents(orgId!, { limit: 40 }),
+    queryKey: ["audit-events", orgId, auditFilters],
+    queryFn: () =>
+      listAuditEvents(orgId!, {
+        limit: 50,
+        from: auditFilters.from,
+        to: auditFilters.to,
+        action: auditFilters.action,
+      }),
     enabled: !!orgId,
   });
 
   const fyPresets = useMemo(() => listRecentFys(4), []);
+
+  const applyAuditFilters = () => {
+    setAuditFilters({
+      from: auditFromDraft || undefined,
+      to: auditToDraft || undefined,
+      action: auditActionDraft !== "all" ? auditActionDraft : undefined,
+    });
+  };
+
+  const clearAuditFilters = () => {
+    setAuditFromDraft("");
+    setAuditToDraft("");
+    setAuditActionDraft("all");
+    setAuditFilters({});
+  };
 
   const upsert = useMutation({
     mutationFn: () => upsertReportingPeriod(orgId!, { label, periodStart, periodEnd }),
@@ -316,9 +369,73 @@ export default function SettingsControls() {
       <Card className="mt-4">
         <CardHeader>
           <CardTitle className="text-base">Audit log</CardTitle>
-          <CardDescription>Recent control events for this organisation.</CardDescription>
+          <CardDescription>
+            Control events for this organisation. Filters run on the server (indexed by org + time + action).
+          </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto] md:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="audit-from">From</Label>
+              <Input
+                id="audit-from"
+                type="date"
+                value={auditFromDraft}
+                onChange={(e) => setAuditFromDraft(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="audit-to">To</Label>
+              <Input
+                id="audit-to"
+                type="date"
+                value={auditToDraft}
+                onChange={(e) => setAuditToDraft(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Action</Label>
+              <Select value={auditActionDraft} onValueChange={setAuditActionDraft}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All actions" />
+                </SelectTrigger>
+                <SelectContent>
+                  {AUDIT_ACTION_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button type="button" onClick={applyAuditFilters}>
+              Apply
+            </Button>
+            <Button type="button" variant="outline" onClick={clearAuditFilters}>
+              Clear
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {fyPresets.map((fy) => (
+              <Button
+                key={fy.label}
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setAuditFromDraft(fy.periodStart);
+                  setAuditToDraft(fy.periodEnd);
+                  setAuditFilters({
+                    from: fy.periodStart,
+                    to: fy.periodEnd,
+                    action: auditActionDraft !== "all" ? auditActionDraft : undefined,
+                  });
+                }}
+              >
+                {fy.label}
+              </Button>
+            ))}
+          </div>
           <div className="rounded-md border overflow-hidden">
             <Table>
               <TableHeader>
@@ -336,10 +453,19 @@ export default function SettingsControls() {
                     </TableCell>
                   </TableRow>
                 )}
-                {!audits.isLoading && (audits.data?.events.length ?? 0) === 0 && (
+                {audits.isError && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-sm text-destructive">
+                      Could not load audit events.
+                      {audits.error instanceof ApiRequestError ? ` ${audits.error.message}` : ""}
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!audits.isLoading && !audits.isError && (audits.data?.events.length ?? 0) === 0 && (
                   <TableRow>
                     <TableCell colSpan={3} className="text-sm text-muted-foreground">
-                      No audit events yet.
+                      No audit events for these filters. New uploads, approvals, reports, and verification
+                      actions will appear here.
                     </TableCell>
                   </TableRow>
                 )}
