@@ -143,7 +143,7 @@ export default function SettingsUsers() {
         title={isSme ? "Team & access" : "Firm team"}
         subtitle={
           isSme
-            ? `People who can upload, review, and approve emissions data for ${tenant?.name ?? "your organisation"}. Approvals use maker–checker when more than one person is on the team.`
+            ? `People who can upload, review, and approve emissions data for ${tenant?.name ?? "your organisation"}.`
             : `Consultants at ${tenant?.name ?? "your firm"}. Roles and client assignments come from the workspace.`
         }
         actions={
@@ -264,7 +264,7 @@ export default function SettingsUsers() {
           <CardTitle className="text-base">Roles</CardTitle>
           <CardDescription>
             {isSme
-              ? "Administrators manage billing and team access. Contributors upload and review; they cannot approve their own uploads when another teammate is available."
+              ? "Administrators manage billing and team access. Contributors can upload, review, and approve emissions data."
               : "What each firm role can do. Client viewers are managed per organisation."}
           </CardDescription>
         </CardHeader>
